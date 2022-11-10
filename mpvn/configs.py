@@ -78,8 +78,8 @@ class DictConfig:
 
     # ConformerLSTM
     encoder_dim: int = 256
-    num_encoder_layers: int = 8
-    num_decoder_layers: int = 2
+    num_encoder_layers: int = 6
+    num_decoder_layers: int = 1
     num_attention_heads: int = 4
     feed_forward_expansion_factor: int = 4
     conv_expansion_factor: int = 2
@@ -95,13 +95,12 @@ class DictConfig:
     cross_entropy_weight: float = 0.7
     ctc_weight: float = 0.3
     joint_ctc_attention: bool = True
-    rnn_type: str = "lstm"
+    rnn_type: str = "gru"
     optimizer: str = "adam"
 
     # BaseTrainer
     seed: int = 1
     accelerator: str = "cuda"
-    precision: int = 16
     accumulate_grad_batches: int = 4
     num_workers: int = 4
     batch_size: int = 8

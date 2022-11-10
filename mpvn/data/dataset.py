@@ -94,7 +94,9 @@ class AudioDataset(Dataset):
                 self.spec_augment_flags.append(True)
                 self.audio_paths.append(self.audio_paths[idx])
                 self.transcripts.append(self.transcripts[idx])
+                self.phonemes.append(self.phonemes[idx])
 
+        print(len(self.audio_paths), len(self.transcripts), len(self.transcripts))
         self.shuffle()
 
     def _spec_augment(self, feature: Tensor) -> Tensor:
