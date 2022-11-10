@@ -35,7 +35,7 @@ from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion import JointCTCCrossEntropyLoss
-from mpvn.vocabs import LibriSpeechVocabulary
+from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
 
@@ -58,7 +58,7 @@ class ConformerLSTMModel(pl.LightningModule):
             self,
             configs: DictConfig,
             num_classes: int,
-            vocab: Vocabulary = LibriSpeechVocabulary,
+            vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
         super(ConformerLSTMModel, self).__init__()
