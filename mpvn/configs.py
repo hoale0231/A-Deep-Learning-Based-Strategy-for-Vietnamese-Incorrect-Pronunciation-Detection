@@ -36,10 +36,10 @@ class DictConfig:
     time_mask_num: int = 4
 
     # Feature extract method
-    num_mels_mfcc: int = 40
-    num_mels_fbank: int = 80
-    num_mels_melspectrogram: int = 80
-    num_mels_spectrogram: int = 161
+    # num_mels_mfcc: int = 40
+    # num_mels_fbank: int = 80
+    num_mels: int = 80
+    # num_mels_spectrogram: int = 161
     feature_extract_method: str = "melspectrogram"
     # feature_extract_method: str = "spectrogram"
     # feature_extract_method: str = "fbank"

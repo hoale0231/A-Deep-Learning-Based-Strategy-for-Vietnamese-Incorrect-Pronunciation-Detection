@@ -61,6 +61,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.max_epochs = configs.max_epochs
         self.num_workers = configs.num_workers
         self.sample_rate = configs.sample_rate
+        self.num_mels = configs.num_mels
         self.frame_length = configs.frame_length
         self.frame_shift = configs.frame_shift
         self.freq_mask_para = configs.freq_mask_para
@@ -70,16 +71,12 @@ class LightningGradDataModule(pl.LightningDataModule):
 
         if configs.feature_extract_method == 'spectrogram':
             self.audio_dataset = SpectrogramDataset
-            self.num_mels = configs.num_mels_spectrogram
         elif configs.feature_extract_method == 'melspectrogram':
             self.audio_dataset = MelSpectrogramDataset
-            self.num_mels = configs.num_mels_melspectrogram
         elif configs.feature_extract_method == 'mfcc':
             self.audio_dataset = MFCCDataset
-            self.num_mels = configs.num_mels_mfcc
         elif configs.feature_extract_method == 'fbank':
             self.audio_dataset = FBankDataset
-            self.num_mels = configs.num_mels_fbank
         else:
             raise ValueError(f"Unsupported `feature_extract_method`: {configs.feature_extract_method}")
 
