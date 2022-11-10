@@ -61,8 +61,6 @@ class AudioDataset(Dataset):
             phonemes: list,
             vocab: Vocabulary,
             apply_spec_augment: bool = False,
-            sos_id: int = 1,
-            eos_id: int = 2,
             sample_rate: int = 16000,
             num_mels: int = 80,
             frame_length: float = 25.0,
@@ -79,8 +77,8 @@ class AudioDataset(Dataset):
         self.vocab = vocab
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
-        self.sos_id = sos_id
-        self.eos_id = eos_id
+        self.sos_id = vocab.sos_id
+        self.eos_id = vocab.eos_id
         self.sample_rate = sample_rate
         self.num_mels = num_mels
         self.frame_length = frame_length

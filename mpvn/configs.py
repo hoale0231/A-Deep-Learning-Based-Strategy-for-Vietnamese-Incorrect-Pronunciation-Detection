@@ -52,7 +52,7 @@ class DictConfig:
     feature_extract_method: str = "mfcc"
 
     # Data
-    dataset_path: str = "../../../librispeech"
+    dataset_path: str = "Data"
     dataset_download: bool = True
     vocab_size: int = 5000
     
@@ -106,7 +106,7 @@ class DictConfig:
 
     # BaseTrainer
     seed: int = 1
-    accelerator: str = "dp"
+    accelerator: str = "cuda"
     precision: int = 16
     accumulate_grad_batches: int = 4
     amp_backend: str = "apex"

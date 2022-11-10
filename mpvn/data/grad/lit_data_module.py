@@ -86,7 +86,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         Returns:
             Vocabulary
         """
-        return GradVocabulary(f"{self.manifest_paths}/token.txt")
+        return GradVocabulary(f"{self.dataset_path}/token.txt")
 
     def setup(self, vocab: Vocabulary = None) -> None:
         """ Split dataset into train, valid, and test. """
@@ -100,8 +100,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 audio_paths=audio_paths,
                 transcripts=transcripts,
                 phonemes=phonemes,
-                sos_id=vocab.sos_id,
-                eos_id=vocab.eos_id,
+                vocab=vocab,
                 apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,
