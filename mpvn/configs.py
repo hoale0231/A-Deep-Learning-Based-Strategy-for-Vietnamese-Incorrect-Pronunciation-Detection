@@ -35,21 +35,15 @@ class DictConfig:
     freq_mask_num: int = 2
     time_mask_num: int = 4
 
-    # Spectrogram
-    num_mels: int = 161
-    feature_extract_method: str = "spectrogram"
-
-    # MelSpectrogram
-    num_mels: int = 80
+    # Feature extract method
+    num_mels_mfcc: int = 40
+    num_mels_fbank: int = 80
+    num_mels_melspectrogram: int = 80
+    num_mels_spectrogram: int = 161
     feature_extract_method: str = "melspectrogram"
-
-    # FBank
-    num_mels: int = 80
-    feature_extract_method: str = "fbank"
-
-    # MFCC
-    num_mels: int = 40
-    feature_extract_method: str = "mfcc"
+    # feature_extract_method: str = "spectrogram"
+    # feature_extract_method: str = "fbank"
+    # feature_extract_method: str = "mfcc"
 
     # Data
     dataset_path: str = "Data"
@@ -84,9 +78,9 @@ class DictConfig:
 
     # ConformerLSTM
     encoder_dim: int = 256
-    num_encoder_layers: int = 17
+    num_encoder_layers: int = 8
     num_decoder_layers: int = 2
-    num_attention_heads: int = 8
+    num_attention_heads: int = 4
     feed_forward_expansion_factor: int = 4
     conv_expansion_factor: int = 2
     input_dropout_p: float = 0.1
@@ -109,14 +103,12 @@ class DictConfig:
     accelerator: str = "cuda"
     precision: int = 16
     accumulate_grad_batches: int = 4
-    amp_backend: str = "apex"
     num_workers: int = 4
     batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
-    use_tensorboard: bool = True
     max_epochs: int = 30
-    auto_scale_batch_size: str = "binsearch"
+    # auto_scale_batch_size: str = "binsearch"
 
     # TrainerGPU
     use_cuda: bool = True
