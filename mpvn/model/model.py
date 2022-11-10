@@ -108,12 +108,13 @@ class ConformerLSTMModel(pl.LightningModule):
     def _log_states(
             self,
             stage: str,
-            cer: float,
             loss: float,
             cross_entropy_loss: float,
             ctc_loss: float,
+            per: float = None,
     ) -> None:
-        self.log(f"{stage}_per", cer)
+        if per:
+            self.log(f"{stage}_per", per)
         self.log(f"{stage}_loss", loss)
         self.log(f"{stage}_cross_entropy_loss", cross_entropy_loss)
         self.log(f"{stage}_ctc_loss", ctc_loss)
@@ -162,15 +163,15 @@ class ConformerLSTMModel(pl.LightningModule):
             target_lengths=target_lengths,
         )
 
-        y_hats = outputs.max(-1)[1]
+        # y_hats = outputs.max(-1)[1]
 
-        per = self.per_metric(targets[:, 1:], y_hats)
+        # per = self.per_metric(targets[:, 1:], y_hats)
 
-        self._log_states('train', per, loss, cross_entropy_loss, ctc_loss)
+        self._log_states('train', loss, cross_entropy_loss, ctc_loss)
 
         return loss
 
-    def validation_step(self, batch: tuple, batch_idx: int, dataset_idx: int) -> Tensor:
+    def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         """
         Forward propagate a `inputs` and `targets` pair for validation.
 
@@ -205,7 +206,7 @@ class ConformerLSTMModel(pl.LightningModule):
 
         return loss
 
-    def test_step(self, batch: tuple, batch_idx: int, dataset_idx: int) -> Tensor:
+    def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         """
         Forward propagate a `inputs` and `targets` pair for test.
 

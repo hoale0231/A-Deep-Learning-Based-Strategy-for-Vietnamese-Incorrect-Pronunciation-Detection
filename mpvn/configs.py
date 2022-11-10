@@ -111,11 +111,11 @@ class DictConfig:
     accumulate_grad_batches: int = 4
     amp_backend: str = "apex"
     num_workers: int = 4
-    batch_size: int = 32
+    batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     use_tensorboard: bool = True
-    max_epochs: int = 20
+    max_epochs: int = 30
     auto_scale_batch_size: str = "binsearch"
 
     # TrainerGPU

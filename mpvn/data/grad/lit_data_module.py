@@ -86,12 +86,15 @@ class LightningGradDataModule(pl.LightningDataModule):
         Returns:
             Vocabulary
         """
-        return GradVocabulary(f"{self.dataset_path}/token.txt")
+        self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
+        return self.vocab
 
-    def setup(self, vocab: Vocabulary = None) -> None:
+    def setup(self, stage: Optional[str] = None) -> None:
         """ Split dataset into train, valid, and test. """
+        if not self.vocab:
+            self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
+        
         splits = ['train', 'val', 'test']
-
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path)
             audio_paths, transcripts, phonemes = df.path, df.text, df.phonemes
@@ -100,7 +103,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 audio_paths=audio_paths,
                 transcripts=transcripts,
                 phonemes=phonemes,
-                vocab=vocab,
+                vocab=self.vocab,
                 apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,

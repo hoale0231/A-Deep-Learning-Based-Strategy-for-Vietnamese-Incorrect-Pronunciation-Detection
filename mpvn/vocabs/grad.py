@@ -1,4 +1,5 @@
 from mpvn.vocabs.vocab import Vocabulary
+from torch import Tensor
 
 class GradVocabulary(Vocabulary):
     """
@@ -25,7 +26,9 @@ class GradVocabulary(Vocabulary):
 
     def label_to_string(self, labels):
         """ Use a character map and convert integer labels to an phone sequence """
-        return [[self.index_map[i] for i in sample] for sample in labels]
+        if isinstance(labels, Tensor):
+            labels = labels.tolist()
+        return ' '.join([self.index_map[label] for label in labels])
     
     def string_to_label(self, text):
         """ Use a phone map and convert phone sequence to an integer sequence """
