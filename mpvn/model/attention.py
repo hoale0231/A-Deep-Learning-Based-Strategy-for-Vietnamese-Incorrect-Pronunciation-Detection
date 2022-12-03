@@ -210,7 +210,8 @@ class RelativeMultiHeadAttention(nn.Module):
         score = (content_score + pos_score) / self.sqrt_dim
 
         if mask is not None:
-            mask = mask.unsqueeze(1)
+            # mask = mask.unsqueeze(1)
+            print(score.shape, mask.shape)
             score.masked_fill_(mask, -1e9)
 
         attn = F.softmax(score, -1)

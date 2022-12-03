@@ -40,12 +40,6 @@ class LightningGradDataModule(pl.LightningDataModule):
         time_mask_num (int): how many time-masked area to make
         freq_mask_num (int): how many freq-masked area to make
     """
-    grad_parts = [
-        'dev',
-        'test',
-        'train',
-    ]
-
     def __init__(self, configs: DictConfig) -> None:
         super(LightningGradDataModule, self).__init__()
         self.dataset_path = configs.dataset_path
@@ -94,7 +88,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         
-        splits = ['train', 'val', 'test']
+        splits = ['train', 'dev', 'test']
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path)
             audio_paths, transcripts, phonemes = df.path, df.text, df.phonemes
@@ -123,7 +117,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=self.batch_size)
+        val_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
         return AudioDataLoader(
                 dataset=self.dataset['test'],
                 num_workers=self.num_workers,

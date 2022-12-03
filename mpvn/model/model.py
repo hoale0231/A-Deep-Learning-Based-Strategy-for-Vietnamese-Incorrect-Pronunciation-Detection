@@ -1,25 +1,3 @@
-# MIT License
-#
-# Copyright (c) 2021 Soohwan Kim
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
@@ -27,33 +5,21 @@ from torch import Tensor
 from typing import Dict, Union
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim import Adam, Adadelta, Adagrad, SGD, Adamax, AdamW, ASGD
+import numpy as np
+import matplotlib.pyplot as plt
 
 from mpvn.configs import DictConfig
 from mpvn.metric import WordErrorRate, CharacterErrorRate
-from mpvn.model.decoder import DecoderRNN
+from mpvn.model.decoder import TransformerDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
-from mpvn.criterion import JointCTCCrossEntropyLoss
+from mpvn.criterion.criterion import CrossEntropyLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
 
-class ConformerLSTMModel(pl.LightningModule):
-    """
-    PyTorch Lightning Automatic Speech Recognition Model. It consist of a conformer encoder and rnn decoder.
-
-    Args:
-        configs (DictConfig): configuraion set
-        num_classes (int): number of classification classes
-        vocab (Vocabulary): vocab of training data
-        cer_metric (CharacterErrorRate): metric for measuring speech-to-text accuracy of ASR systems (character-level)
-
-    Attributes:
-        num_classes (int): Number of classification classes
-        vocab (Vocabulary): vocab of training data
-        teacher_forcing_ratio (float): ratio of teacher forcing (forward label as decoder input)
-    """
+class ConformerTransformerModel(pl.LightningModule):
     def __init__(
             self,
             configs: DictConfig,
@@ -61,18 +27,14 @@ class ConformerLSTMModel(pl.LightningModule):
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
-        super(ConformerLSTMModel, self).__init__()
+        super(ConformerTransformerModel, self).__init__()
         self.configs = configs
         self.gradient_clip_val = configs.gradient_clip_val
         self.teacher_forcing_ratio = configs.teacher_forcing_ratio
         self.vocab = vocab
         self.per_metric = per_metric
         self.criterion = self.configure_criterion(
-            num_classes,
             ignore_index=self.vocab.pad_id,
-            blank_id=self.vocab.blank_id,
-            ctc_weight=configs.ctc_weight,
-            cross_entropy_weight=configs.cross_entropy_weight,
         )
 
         self.encoder = ConformerEncoder(
@@ -91,153 +53,103 @@ class ConformerLSTMModel(pl.LightningModule):
             half_step_residual=configs.half_step_residual,
             joint_ctc_attention=configs.joint_ctc_attention,
         )
-        self.decoder = DecoderRNN(
+        self.decoder = TransformerDecoder(
             num_classes=num_classes,
-            max_length=configs.max_length,
-            hidden_state_dim=configs.encoder_dim,
-            pad_id=self.vocab.pad_id,
-            sos_id=self.vocab.sos_id,
-            eos_id=self.vocab.eos_id,
-            num_heads=configs.num_attention_heads,
-            dropout_p=configs.decoder_dropout_p,
-            num_layers=configs.num_decoder_layers,
-            rnn_type=configs.rnn_type,
-            use_tpu=configs.use_tpu,
+            d_model=configs.encoder_dim,
+            feed_forward_expansion_factor=configs.feed_forward_expansion_factor,
+            n_head=configs.num_attention_heads,
+            n_layers=configs.num_decoder_layers,
+            drop_prob=configs.decoder_dropout_p
         )
 
-    def _log_states(
-            self,
-            stage: str,
-            loss: float,
-            cross_entropy_loss: float,
-            ctc_loss: float,
-            per: float = None,
-    ) -> None:
+    def _log_states(self, stage: str, loss: float, per: float = None) -> None:
         if per:
             self.log(f"{stage}_per", per)
         self.log(f"{stage}_loss", loss)
-        self.log(f"{stage}_cross_entropy_loss", cross_entropy_loss)
-        self.log(f"{stage}_ctc_loss", ctc_loss)
-        return
+
+    def make_no_peak_mask(self, q, k):
+        len_q, len_k = q.size(1), k.size(1)
+        return torch.tril(torch.ones(len_q, len_k)).type(torch.BoolTensor).to(self.device) == False
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tensor:
-        """
-        Forward propagate a `inputs` and `targets` pair for inference.
+        inputs, targets, input_lengths, target_lengths = batch
+        target_mark = self.make_no_peak_mask(targets, targets)
 
-        Args:
-            inputs (torch.FloatTensor): A input sequence passed to encoder. Typically for inputs this will be a padded
-                `FloatTensor` of size ``(batch, seq_length, dimension)``.
-            input_lengths (torch.LongTensor): The length of input tensor. ``(batch)``
-
-        Returns:
-            * y_hats (torch.FloatTensor): Result of model predictions.
-        """
         _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
-        y_hats = self.decoder(encoder_outputs=encoder_outputs, teacher_forcing_ratio=0.0)
-        return y_hats
+        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
+        return outputs
 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        """
-        Forward propagate a `inputs` and `targets` pair for training.
-
-        Inputs:
-            train_batch (tuple): A train batch contains `inputs`, `targets`, `input_lengths`, `target_lengths`
-            batch_idx (int): The index of batch
-
-        Returns:
-            loss (torch.FloatTensor): Loss for training.
-        """
         inputs, targets, input_lengths, target_lengths = batch
+        target_mark = self.make_no_peak_mask(targets, targets)
 
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs = self.decoder(targets, encoder_outputs, teacher_forcing_ratio=self.teacher_forcing_ratio)
+        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        loss = self.criterion(
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
+            targets=targets[:, 1:]
         )
 
-        # y_hats = outputs.max(-1)[1]
-
-        # per = self.per_metric(targets[:, 1:], y_hats)
-
-        self._log_states('train', loss, cross_entropy_loss, ctc_loss)
+        self._log_states('train', loss)
 
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        """
-        Forward propagate a `inputs` and `targets` pair for validation.
-
-        Inputs:
-            train_batch (tuple): A train batch contains `inputs`, `targets`, `input_lengths`, `target_lengths`
-            batch_idx (int): The index of batch
-
-        Returns:
-            loss (torch.FloatTensor): Loss for training.
-        """
         inputs, targets, input_lengths, target_lengths = batch
+        target_mark = self.make_no_peak_mask(targets, targets)
 
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs = self.decoder(encoder_outputs=encoder_outputs, teacher_forcing_ratio=0.0)
+        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        loss = self.criterion(
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
+            targets=targets[:, 1:]
         )
 
         y_hats = outputs.max(-1)[1]
-
         per = self.per_metric(targets[:, 1:], y_hats)
+        
+        if batch_idx == 0:
+            print("\n 1 sample result")
+            print("Predict:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]))
+            print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]))
+            print("Attention:", attn.shape)
+            attn = torch.sum(attn, dim=0).detach().cpu()
+            print(attn.shape)
+            plt.imshow(attn, interpolation='none')
+            plt.show()
+            
 
-        self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
+        self._log_states('valid', per, loss)
 
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        """
-        Forward propagate a `inputs` and `targets` pair for test.
-
-        Inputs:
-            train_batch (tuple): A train batch contains `inputs`, `targets`, `input_lengths`, `target_lengths`
-            batch_idx (int): The index of batch
-
-        Returns:
-            loss (torch.FloatTensor): Loss for training.
-        """
         inputs, targets, input_lengths, target_lengths = batch
+        target_mark = self.make_no_peak_mask(targets, targets)
 
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs = self.decoder(encoder_outputs=encoder_outputs, teacher_forcing_ratio=0.0)
+        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
+        outputs, _ = self.decoder(targets, encoder_outputs, target_mark, None)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        loss = self.criterion(
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
+            targets=targets[:, 1:]
         )
 
         y_hats = outputs.max(-1)[1]
-
         per = self.per_metric(targets[:, 1:], y_hats)
 
-        self._log_states('test', per, loss, cross_entropy_loss, ctc_loss)
+        self._log_states('test', per, loss)
 
         return loss
 
@@ -297,20 +209,12 @@ class ConformerLSTMModel(pl.LightningModule):
 
     def configure_criterion(
             self,
-            num_classes: int,
             ignore_index: int,
-            blank_id: int,
-            cross_entropy_weight: float,
-            ctc_weight: float,
     ) -> nn.Module:
         """ Configure criterion """
-        criterion = JointCTCCrossEntropyLoss(
-            num_classes=num_classes,
+        criterion = CrossEntropyLoss(
             ignore_index=ignore_index,
             reduction="mean",
-            blank_id=blank_id,
-            dim=-1,
-            cross_entropy_weight=cross_entropy_weight,
-            ctc_weight=ctc_weight,
         )
         return criterion
+

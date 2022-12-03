@@ -83,7 +83,7 @@ class ConformerBlock(nn.Module):
         self.sequential = nn.Sequential(
             ResidualConnectionModule(
                 module=FeedForwardModule(
-                    encoder_dim=encoder_dim,
+                    d_model=encoder_dim,
                     expansion_factor=feed_forward_expansion_factor,
                     dropout_p=feed_forward_dropout_p,
                 ),
@@ -106,7 +106,7 @@ class ConformerBlock(nn.Module):
             ),
             ResidualConnectionModule(
                 module=FeedForwardModule(
-                    encoder_dim=encoder_dim,
+                    d_model=encoder_dim,
                     expansion_factor=feed_forward_expansion_factor,
                     dropout_p=feed_forward_dropout_p,
                 ),

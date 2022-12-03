@@ -20,5 +20,5 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from mpvn.criterion.joint_ctc_cross_entropy import JointCTCCrossEntropyLoss
+from mpvn.criterion.criterion import JointCTCCrossEntropyLoss, CrossEntropyLoss
 from mpvn.criterion.label_smoothed_cross_entropy import LabelSmoothedCrossEntropyLoss

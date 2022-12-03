@@ -76,8 +76,8 @@ class DictConfig:
     decay_steps: int = 150000
     scheduler: str = "transformer"
 
-    # ConformerLSTM
-    encoder_dim: int = 256
+    # Conformer-Transformer
+    encoder_dim: int = 144
     num_encoder_layers: int = 6
     num_decoder_layers: int = 1
     num_attention_heads: int = 4
@@ -94,7 +94,7 @@ class DictConfig:
     teacher_forcing_ratio: float = 1.0
     cross_entropy_weight: float = 0.7
     ctc_weight: float = 0.3
-    joint_ctc_attention: bool = True
+    joint_ctc_attention: bool = False
     rnn_type: str = "gru"
     optimizer: str = "adam"
 

@@ -25,6 +25,21 @@ from typing import Tuple
 from torch import Tensor
 
 
+class CrossEntropyLoss(nn.Module):
+    def __init__(self, ignore_index, reduction='mean') -> None:
+        super(CrossEntropyLoss, self).__init__()
+        self.reduction = reduction.lower()
+        self.ignore_index = ignore_index
+        self.cross_entropy_loss = nn.CrossEntropyLoss(reduction=self.reduction, ignore_index=self.ignore_index)
+        
+    def forward(
+            self,
+            decoder_log_probs: Tensor,
+            targets: Tensor,
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1))
+        return cross_entropy_loss
+
 class JointCTCCrossEntropyLoss(nn.Module):
     """
     Privides Joint CTC-CrossEntropy Loss function

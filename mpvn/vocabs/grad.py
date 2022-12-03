@@ -12,7 +12,7 @@ class GradVocabulary(Vocabulary):
         super(GradVocabulary, self).__init__()
         with open(token_path) as fr:
             self.vocab = fr.read().splitlines()
-        self.vocab = ['<pad>', '<s>', '</s>'] + self.vocab
+        self.vocab = ['<p>', '<s>', '<e>'] + self.vocab
         self.pad_id = 0
         self.blank_id = 0
         self.sos_id = 1
@@ -33,7 +33,7 @@ class GradVocabulary(Vocabulary):
     def string_to_label(self, text):
         """ Use a phone map and convert phone sequence to an integer sequence """
         if isinstance(text, str):
-            text = text.split()
+            text = text.replace(' ', '- -').split('-')
         if not isinstance(text, list):
             raise "text much be str or list"
         return [self.phone_map[phone] for phone in text]
