@@ -67,5 +67,8 @@ class TransformerDecoder(nn.Module):
             target, attn = layer(target, encode_output, trg_mask, src_mask)
 
         output = self.linear(target)
+        print(output)
+        output = output.log_softmax(dim=-1)
+        print(output)
         return output, attn
 
