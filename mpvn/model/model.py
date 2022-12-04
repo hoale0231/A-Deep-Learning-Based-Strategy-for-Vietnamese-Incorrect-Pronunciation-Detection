@@ -142,33 +142,6 @@ class ConformerTransformerModel(pl.LightningModule):
 
         return loss
 
-    def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths = batch
-        
-        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
-
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
-
-        max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
-        outputs = outputs[:, :max_target_length, :]
-
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
-        )
-
-        y_hats = outputs.max(-1)[1]
-        per = self.per_metric(targets[:, 1:], y_hats)
-
-        self._log_states('test', per, loss, ctc_loss, cross_entropy_loss)
-
-        return loss
-
     def configure_optimizers(self) -> Dict[str, Union[torch.optim.Optimizer, object, str]]:
         """ Configure optimizer """
         supported_optimizers = {
@@ -351,13 +324,15 @@ class ConformerLSTMModel(pl.LightningModule):
         )
         
         y_hats = outputs.max(-1)[1]
+        y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
         
         self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
         
         if batch_idx == 0:
-            print("\n 1 sample result")
-            print("Predict:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]))
+            print("\n1 sample result")
+            print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]))
+            print("DP:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]))
             print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]))
             print("Attention:", attn.shape)
             attn = torch.sum(attn, dim=0).detach().cpu()

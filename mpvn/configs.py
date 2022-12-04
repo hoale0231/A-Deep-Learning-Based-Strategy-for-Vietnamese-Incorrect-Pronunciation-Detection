@@ -92,8 +92,8 @@ class DictConfig:
     half_step_residual: bool = True
     max_length: int = 128
     teacher_forcing_ratio: float = 1.0
-    cross_entropy_weight: float = 0.7
-    ctc_weight: float = 0.3
+    cross_entropy_weight: float = 0.5
+    ctc_weight: float = 0.5
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"

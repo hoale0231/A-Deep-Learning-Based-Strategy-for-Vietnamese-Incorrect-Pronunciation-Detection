@@ -77,7 +77,7 @@ class JointCTCCrossEntropyLoss(nn.Module):
             targets: Tensor,
             target_lengths: Tensor,
     ) -> Tuple[Tensor, Tensor, Tensor]:
-        ctc_loss = self.ctc_loss(encoder_log_probs, targets, output_lengths, target_lengths)
-        cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1))
+        ctc_loss = self.ctc_loss(encoder_log_probs, targets, output_lengths, target_lengths) if self.ctc_weight > 0 else 0
+        cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1)) if self.cross_entropy_weight > 0 else 0
         loss = cross_entropy_loss * self.cross_entropy_weight + ctc_loss * self.ctc_weight
         return loss, ctc_loss, cross_entropy_loss
