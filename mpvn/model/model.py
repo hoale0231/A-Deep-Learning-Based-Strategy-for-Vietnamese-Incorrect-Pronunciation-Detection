@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from mpvn.configs import DictConfig
 from mpvn.metric import WordErrorRate, CharacterErrorRate
-from mpvn.model.decoder import TransformerDecoder
+from mpvn.model.decoder import SpeechTransformerDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
@@ -53,13 +53,15 @@ class ConformerTransformerModel(pl.LightningModule):
             half_step_residual=configs.half_step_residual,
             joint_ctc_attention=configs.joint_ctc_attention,
         )
-        self.decoder = TransformerDecoder(
+        self.decoder = SpeechTransformerDecoder(
             num_classes=num_classes,
             d_model=configs.encoder_dim,
-            feed_forward_expansion_factor=configs.feed_forward_expansion_factor,
-            n_head=configs.num_attention_heads,
-            n_layers=configs.num_decoder_layers,
-            drop_prob=configs.decoder_dropout_p
+            d_ff=configs.encoder_dim*configs.feed_forward_expansion_factor,
+            num_heads=configs.num_attention_heads,
+            num_layers=configs.num_decoder_layers,
+            dropout_p=configs.decoder_dropout_p,
+            eos_id=vocab.eos_id,
+            pad_id=vocab.pad_id
         )
 
     def _log_states(self, stage: str, loss: float, per: float = None) -> None:
@@ -67,24 +69,20 @@ class ConformerTransformerModel(pl.LightningModule):
             self.log(f"{stage}_per", per)
         self.log(f"{stage}_loss", loss)
 
-    def make_no_peak_mask(self, q, k):
-        len_q, len_k = q.size(1), k.size(1)
-        return torch.tril(torch.ones(len_q, len_k)).type(torch.BoolTensor).to(self.device) == False
-
-    def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tensor:
+    def forward(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
         target_mark = self.make_no_peak_mask(targets, targets)
 
-        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
+        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
+        
         return outputs
 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
-        target_mark = self.make_no_peak_mask(targets, targets)
 
-        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
+        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -100,10 +98,9 @@ class ConformerTransformerModel(pl.LightningModule):
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
-        target_mark = self.make_no_peak_mask(targets, targets)
 
-        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(targets, encoder_outputs, target_mark, None)
+        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -133,10 +130,9 @@ class ConformerTransformerModel(pl.LightningModule):
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
-        target_mark = self.make_no_peak_mask(targets, targets)
-
-        _, encoder_outputs, _ = self.encoder(inputs, input_lengths)
-        outputs, _ = self.decoder(targets, encoder_outputs, target_mark, None)
+        
+        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
