@@ -12,11 +12,11 @@ class GradVocabulary(Vocabulary):
         super(GradVocabulary, self).__init__()
         with open(token_path) as fr:
             self.vocab = fr.read().splitlines()
-        self.vocab = ['<p>', '<s>', '<e>'] + self.vocab
+        self.vocab = ['_', ' ', '<s>', '<e>'] + self.vocab
         self.pad_id = 0
         self.blank_id = 0
-        self.sos_id = 1
-        self.eos_id = 2
+        self.sos_id = 2
+        self.eos_id = 3
         self.vocab_size = len(self.vocab)
         self.phone_map = dict()
         self.index_map = dict()
@@ -28,12 +28,13 @@ class GradVocabulary(Vocabulary):
         """ Use a character map and convert integer labels to an phone sequence """
         if isinstance(labels, Tensor):
             labels = labels.tolist()
-        return ' '.join([self.index_map[label] for label in labels])
+        return '-'.join([self.index_map[label] for label in labels])
     
     def string_to_label(self, text):
         """ Use a phone map and convert phone sequence to an integer sequence """
         if isinstance(text, str):
-            text = text.replace(' ', '- -').split('-')
+            # text = text.replace(' ', '- -').split('-')
+            text = list(text)
         if not isinstance(text, list):
             raise "text much be str or list"
         return [self.phone_map[phone] for phone in text]

@@ -177,8 +177,8 @@ class Conv2dSubampling(nn.Module):
         self.sequential = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2),
-            nn.ReLU(),
+            # nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=2),
+            # nn.ReLU(),
         )
 
     def forward(self, inputs: Tensor, input_lengths: Tensor) -> Tuple[Tensor, Tensor]:
@@ -188,7 +188,7 @@ class Conv2dSubampling(nn.Module):
         outputs = outputs.transpose(1, 2)
         outputs = outputs.contiguous().view(batch_size, subsampled_lengths, channels * sumsampled_dim)
 
-        output_lengths = input_lengths >> 2
+        output_lengths = input_lengths >> 1
         output_lengths -= 1
 
         return outputs, output_lengths
