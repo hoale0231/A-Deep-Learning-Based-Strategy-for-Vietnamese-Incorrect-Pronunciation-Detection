@@ -78,9 +78,9 @@ class DictConfig:
 
     # Conformer-Transformer
     encoder_dim: int = 144
-    num_encoder_layers: int = 6
-    num_decoder_layers: int = 1
-    num_attention_heads: int = 4
+    num_encoder_layers: int = 2
+    num_decoder_layers: int = 2
+    num_attention_heads: int = 2
     feed_forward_expansion_factor: int = 4
     conv_expansion_factor: int = 2
     input_dropout_p: float = 0.1

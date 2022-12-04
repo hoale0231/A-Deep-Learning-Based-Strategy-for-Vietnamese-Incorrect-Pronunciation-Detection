@@ -18,7 +18,7 @@ import random
 from torch import Tensor
 from typing import Optional, Any, Tuple
 
-from mpvn.model.attention import MultiHeadAttention
+from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
 from mpvn.model.embedding import Embedding, PositionalEncoding
 from mpvn.model.mask import get_attn_pad_mask, get_attn_subsequent_mask
 from mpvn.model.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View
@@ -90,7 +90,7 @@ class SpeechTransformerDecoder(nn.Module):
             ffnet_style: str = 'ff',
             dropout_p: float = 0.3,
             pad_id: int = 0,
-            eos_id: int = 2,
+            eos_id: int = 3,
     ) -> None:
         super(SpeechTransformerDecoder, self).__init__()
         self.d_model = d_model
@@ -338,3 +338,63 @@ class DecoderRNN(nn.Module):
             max_length = targets.size(1) - 1  # minus the start of sequence symbol
 
         return targets, batch_size, max_length
+
+
+class DecoderTransformer(nn.Module):
+    def __init__(self,
+        num_classes: int,
+        hidden_state_dim: int = 512,
+        num_heads: int = 4,
+        pad_id: int = 0,
+        eos_id: int = 3,
+        dropout_p: float = 0.3,
+        attention_dropout_p = 0.1
+
+    ) -> None:
+        super(DecoderTransformer, self).__init__()
+        self.embedding = Embedding(num_classes, pad_id, hidden_state_dim)
+        self.positional_encoding = PositionalEncoding(hidden_state_dim)
+        self.input_dropout = nn.Dropout(dropout_p)
+        
+        self.self_attention = AddNorm(MultiHeadedSelfAttentionModule(hidden_state_dim, num_heads, attention_dropout_p), hidden_state_dim)
+        self.attention = MultiHeadAttention(hidden_state_dim, num_heads=num_heads)
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_state_dim << 1, hidden_state_dim),
+            nn.Tanh(),
+            View(shape=(-1, hidden_state_dim), contiguous=True),
+            nn.Linear(hidden_state_dim, num_classes),
+        )
+        self.eos_id = eos_id
+        self.hidden_state_dim = hidden_state_dim
+
+        
+    def forward(
+            self, 
+            encoder_outputs: Tensor,
+            targets: Optional[torch.LongTensor] = None,
+            encoder_output_lengths: Tensor = None,
+            target_lengths: Tensor = None
+    ):
+        batch_size = targets.size(0)
+        decoder_inputs = targets[targets != self.eos_id].view(batch_size, -1)
+        
+        output_lengths = decoder_inputs.size(1)
+        positional_encoding_length = decoder_inputs.size(1)
+      
+        self_attn_mask = torch.gt(get_attn_subsequent_mask(decoder_inputs), 0)
+
+        outputs = self.embedding(decoder_inputs) + self.positional_encoding(positional_encoding_length)
+        outputs = self.input_dropout(outputs)
+        
+        outputs = self.self_attention(outputs, self_attn_mask)
+        
+        context, attn = self.attention(outputs, encoder_outputs, encoder_outputs)
+        
+        outputs = torch.cat((outputs, context), dim=2)
+        
+        step_outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)
+        step_outputs = step_outputs.view(batch_size, output_lengths, -1).squeeze(1)
+
+        return step_outputs, attn
+        
+        
