@@ -55,17 +55,13 @@ class JointCTCCrossEntropyLoss(nn.Module):
     """
     def __init__(
             self,
-            num_classes: int,
             ignore_index: int,
-            dim: int = -1,
             reduction='mean',
             ctc_weight: float = 0.3,
             cross_entropy_weight: float = 0.7,
             blank_id: int = None,
     ) -> None:
         super(JointCTCCrossEntropyLoss, self).__init__()
-        self.num_classes = num_classes
-        self.dim = dim
         self.ignore_index = ignore_index
         self.reduction = reduction.lower()
         self.ctc_weight = ctc_weight

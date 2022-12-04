@@ -14,7 +14,7 @@ from mpvn.model.decoder import SpeechTransformerDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
-from mpvn.criterion.criterion import CrossEntropyLoss
+from mpvn.criterion.criterion import JointCTCCrossEntropyLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
@@ -35,6 +35,9 @@ class ConformerTransformerModel(pl.LightningModule):
         self.per_metric = per_metric
         self.criterion = self.configure_criterion(
             ignore_index=self.vocab.pad_id,
+            ctc_weight=configs.ctc_weight,
+            cross_entropy_weight=configs.cross_entropy_weight,
+            blank_id=vocab.blank_id
         )
 
         self.encoder = ConformerEncoder(
@@ -64,15 +67,18 @@ class ConformerTransformerModel(pl.LightningModule):
             pad_id=vocab.pad_id
         )
 
-    def _log_states(self, stage: str, loss: float, per: float = None) -> None:
+    def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None) -> None:
         if per:
             self.log(f"{stage}_per", per)
         self.log(f"{stage}_loss", loss)
+        if cross_entropy_loss:
+            self.log(f"{stage}_cross_entropy_loss", cross_entropy_loss)
+        if ctc_loss:
+            self.log(f"{stage}_ctc_loss", ctc_loss)
 
     def forward(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
-        target_mark = self.make_no_peak_mask(targets, targets)
-
+        
         _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
         outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
         
@@ -81,18 +87,21 @@ class ConformerTransformerModel(pl.LightningModule):
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths = batch
 
-        _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
+        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
 
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss = self.criterion(
+        loss, ctc_loss, cross_entropy_loss = self.criterion(
+            encoder_log_probs=encoder_log_probs.transpose(0, 1),
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            targets=targets[:, 1:]
+            output_lengths=encoder_output_lengths,
+            targets=targets[:, 1:],
+            target_lengths=target_lengths,
         )
 
-        self._log_states('train', loss)
+        self._log_states('train', loss, ctc_loss, cross_entropy_loss)
 
         return loss
 
@@ -102,12 +111,18 @@ class ConformerTransformerModel(pl.LightningModule):
         _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
         outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
 
+        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
+
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss = self.criterion(
+        loss, ctc_loss, cross_entropy_loss = self.criterion(
+            encoder_log_probs=encoder_log_probs.transpose(0, 1),
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            targets=targets[:, 1:]
+            output_lengths=encoder_output_lengths,
+            targets=targets[:, 1:],
+            target_lengths=target_lengths,
         )
 
         y_hats = outputs.max(-1)[1]
@@ -122,9 +137,8 @@ class ConformerTransformerModel(pl.LightningModule):
             print(attn.shape)
             plt.imshow(attn, interpolation='none')
             plt.show()
-            
 
-        self._log_states('valid', per, loss)
+        self._log_states('valid', per, loss, ctc_loss, cross_entropy_loss)
 
         return loss
 
@@ -134,18 +148,24 @@ class ConformerTransformerModel(pl.LightningModule):
         _, encoder_outputs, encoder_outputs_length = self.encoder(inputs, input_lengths)
         outputs, attn = self.decoder(encoder_outputs, targets, encoder_outputs_length, target_lengths)
 
+        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
+
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
 
-        loss = self.criterion(
+        loss, ctc_loss, cross_entropy_loss = self.criterion(
+            encoder_log_probs=encoder_log_probs.transpose(0, 1),
             decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            targets=targets[:, 1:]
+            output_lengths=encoder_output_lengths,
+            targets=targets[:, 1:],
+            target_lengths=target_lengths,
         )
 
         y_hats = outputs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
 
-        self._log_states('test', per, loss)
+        self._log_states('test', per, loss, ctc_loss, cross_entropy_loss)
 
         return loss
 
@@ -206,11 +226,16 @@ class ConformerTransformerModel(pl.LightningModule):
     def configure_criterion(
             self,
             ignore_index: int,
+            ctc_weight: float = 0.3,
+            cross_entropy_weight: float = 0.7,
+            blank_id: int = None
     ) -> nn.Module:
         """ Configure criterion """
-        criterion = CrossEntropyLoss(
+        return JointCTCCrossEntropyLoss(
             ignore_index=ignore_index,
             reduction="mean",
+            blank_id=blank_id,
+            cross_entropy_weight=cross_entropy_weight,
+            ctc_weight=ctc_weight,
         )
-        return criterion
 

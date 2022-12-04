@@ -94,7 +94,7 @@ class DictConfig:
     teacher_forcing_ratio: float = 1.0
     cross_entropy_weight: float = 0.7
     ctc_weight: float = 0.3
-    joint_ctc_attention: bool = False
+    joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
 
