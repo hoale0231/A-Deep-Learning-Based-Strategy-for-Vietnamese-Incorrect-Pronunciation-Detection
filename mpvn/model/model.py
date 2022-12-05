@@ -135,7 +135,7 @@ class ConformerTransformerModel(pl.LightningModule):
             print("DP:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]))
             print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]))
             print("Attention:", attn.shape)
-            attn = torch.sum(attn, dim=1).detach().cpu()
+            attn = torch.sum(attn, dim=0).detach().cpu()
             print(attn.shape)
             plt.imshow(attn, interpolation='none')
             plt.show()
@@ -477,7 +477,7 @@ class Con_Trans_formerModel(pl.LightningModule):
             
     def forward(self, inputs: Tensor, targets: Tensor, input_lengths: Tensor, target_lengths: Tensor) -> Tensor:
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets)
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
         return outputs, attn
@@ -494,7 +494,7 @@ class Con_Trans_formerModel(pl.LightningModule):
         inputs, targets, input_lengths, target_lengths = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -514,7 +514,7 @@ class Con_Trans_formerModel(pl.LightningModule):
         inputs, targets, input_lengths, target_lengths = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(encoder_outputs, targets, encoder_output_lengths, target_lengths)
+        outputs, attn = self.decoder(encoder_outputs, targets)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]

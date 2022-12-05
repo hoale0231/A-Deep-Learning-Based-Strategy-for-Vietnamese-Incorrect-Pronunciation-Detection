@@ -1,17 +1,3 @@
-# Copyright (c) 2020, Soohwan Kim. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import torch
 import torch.nn as nn
 import random
@@ -21,7 +7,7 @@ from typing import Optional, Any, Tuple
 from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
 from mpvn.model.embedding import Embedding, PositionalEncoding
 from mpvn.model.mask import get_attn_pad_mask, get_attn_subsequent_mask
-from mpvn.model.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View
+from mpvn.model.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View, LayerNorm
 
 class SpeechTransformerDecoderLayer(nn.Module):
     """
@@ -60,7 +46,6 @@ class SpeechTransformerDecoderLayer(nn.Module):
         output, ecoder_decoder_attn = self.encoder_decoder_attention(output, encoder_outputs, encoder_outputs, encoder_attn_mask)
         output = self.feed_forward(output)
         return output, self_attn, ecoder_decoder_attn
-
 
 class SpeechTransformerDecoder(nn.Module):
     r"""
@@ -363,7 +348,9 @@ class DecoderTransformer(nn.Module):
             nn.Tanh(),
             View(shape=(-1, hidden_state_dim), contiguous=True),
             nn.Linear(hidden_state_dim, num_classes),
+            LayerNorm(hidden_state_dim)
         )
+        
         self.eos_id = eos_id
         self.hidden_state_dim = hidden_state_dim
 
@@ -372,8 +359,6 @@ class DecoderTransformer(nn.Module):
             self, 
             encoder_outputs: Tensor,
             targets: Optional[torch.LongTensor] = None,
-            encoder_output_lengths: Tensor = None,
-            target_lengths: Tensor = None
     ):
         batch_size = targets.size(0)
         decoder_inputs = targets[targets != self.eos_id].view(batch_size, -1)
