@@ -518,7 +518,7 @@ class DecoderARNN(nn.Module):
                 input_rnn = predicted_log_probs[-1].topk(1)[1]
 
         predicted_log_probs = torch.stack(predicted_log_probs, dim=1)
-        attns = torch.stack(attns, dim=1).squeeze().permute(1,0,2)
+        attns = torch.stack(attns, dim=1).permute(0,2,1,3).squeeze()
         return predicted_log_probs, attns
 
     def _validate_args(
