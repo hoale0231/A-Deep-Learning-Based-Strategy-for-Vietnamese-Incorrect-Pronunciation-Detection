@@ -28,7 +28,7 @@ class GradVocabulary(Vocabulary):
         """ Use a character map and convert integer labels to an phone sequence """
         if isinstance(labels, Tensor):
             labels = labels.tolist()
-        return ''.join([self.index_map[label] for label in labels])
+        return ' '.join([self.index_map[label] for label in labels])
     
     def string_to_label(self, text):
         """ Use a phone map and convert phone sequence to an integer sequence """

@@ -268,3 +268,67 @@ class MultiHeadedSelfAttentionModule(nn.Module):
         outputs = self.attention(inputs, inputs, inputs, pos_embedding=pos_embedding, mask=mask)
 
         return self.dropout(outputs)
+
+
+class MultiHeadLocationAwareAttention(nn.Module):
+    """
+    Applies a multi-headed location-aware attention mechanism on the output features from the decoder.
+    Location-aware attention proposed in "Attention-Based Models for Speech Recognition" paper.
+    The location-aware attention mechanism is performing well in speech recognition tasks.
+    In the above paper applied a signle head, but we applied multi head concept.
+
+    Args:
+        hidden_dim (int): The number of expected features in the output
+        num_heads (int): The number of heads. (default: )
+        conv_out_channel (int): The number of out channel in convolution
+
+    Inputs: query, value, prev_attn
+        - **query** (batch, q_len, hidden_dim): tensor containing the output features from the decoder.
+        - **value** (batch, v_len, hidden_dim): tensor containing features of the encoded input sequence.
+        - **prev_attn** (batch_size * num_heads, v_len): tensor containing previous timestep`s attention (alignment)
+
+    Returns: output, attn
+        - **output** (batch, output_len, dimensions): tensor containing the feature from encoder outputs
+        - **attn** (batch * num_heads, v_len): tensor containing the attention (alignment) from the encoder outputs.
+
+    Reference:
+        - **Attention Is All You Need**: https://arxiv.org/abs/1706.03762
+        - **Attention-Based Models for Speech Recognition**: https://arxiv.org/abs/1506.07503
+    """
+    def __init__(self, hidden_dim: int, num_heads: int = 8, conv_out_channel: int = 10) -> None:
+        super(MultiHeadLocationAwareAttention, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.dim = int(hidden_dim / num_heads)
+        self.conv1d = nn.Conv1d(num_heads, conv_out_channel, kernel_size=3, padding=1)
+        self.loc_proj = nn.Linear(conv_out_channel, self.dim, bias=False)
+        self.query_proj = nn.Linear(hidden_dim, self.dim * num_heads, bias=False)
+        self.value_proj = nn.Linear(hidden_dim, self.dim * num_heads, bias=False)
+        self.score_proj = nn.Linear(self.dim, 1, bias=True)
+        self.bias = nn.Parameter(torch.rand(self.dim).uniform_(-0.1, 0.1))
+
+    def forward(self, query: Tensor, value: Tensor, last_attn: Tensor) -> Tuple[Tensor, Tensor]:
+        batch_size, seq_len = value.size(0), value.size(1)
+
+        if last_attn is None:
+            last_attn = value.new_zeros(batch_size, self.num_heads, seq_len)
+
+        loc_energy = torch.tanh(self.loc_proj(self.conv1d(last_attn).transpose(1, 2)))
+        loc_energy = loc_energy.unsqueeze(1).repeat(1, self.num_heads, 1, 1).view(-1, seq_len, self.dim)
+
+        query = self.query_proj(query).view(batch_size, -1, self.num_heads, self.dim).permute(0, 2, 1, 3)
+        value = self.value_proj(value).view(batch_size, -1, self.num_heads, self.dim).permute(0, 2, 1, 3)
+        query = query.contiguous().view(-1, 1, self.dim)
+        value = value.contiguous().view(-1, seq_len, self.dim)
+
+        score = self.score_proj(torch.tanh(value + query + loc_energy + self.bias)).squeeze(2)
+        attn = F.softmax(score, dim=1)
+
+        value = value.view(batch_size, seq_len, self.num_heads, self.dim).permute(0, 2, 1, 3)
+        value = value.contiguous().view(-1, seq_len, self.dim)
+
+        context = torch.bmm(attn.unsqueeze(1), value).view(batch_size, -1, self.num_heads * self.dim)
+        attn = attn.view(batch_size, self.num_heads, -1)
+
+        return context, attn
+
