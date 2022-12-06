@@ -75,6 +75,7 @@ class DictConfig:
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
+    half_subsampling: bool = False
 
     # BaseTrainer
     seed: int = 1

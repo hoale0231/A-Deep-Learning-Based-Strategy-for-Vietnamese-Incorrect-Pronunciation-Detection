@@ -145,4 +145,8 @@ dmypy.json
 
 Data
 test.py
-preprocessing.ipynb
+*.ipynb
+Checkpoint/
+test.result
+log.log
+tensorboard/

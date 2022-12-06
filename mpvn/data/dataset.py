@@ -56,6 +56,7 @@ class AudioDataset(Dataset):
     def __init__(
             self,
             dataset_path: str,
+            utt_id: str,
             audio_paths: list,
             transcripts: list,
             phonemes: list,
@@ -71,6 +72,7 @@ class AudioDataset(Dataset):
     ) -> None:
         super(AudioDataset, self).__init__()
         self.dataset_path = dataset_path
+        self.utt_id = list(utt_id)
         self.audio_paths = list(audio_paths)
         self.transcripts = list(transcripts)
         self.phonemes = list(phonemes)
@@ -92,6 +94,7 @@ class AudioDataset(Dataset):
         if apply_spec_augment:
             for idx in range(self.dataset_size):
                 self.spec_augment_flags.append(True)
+                self.utt_id.append(self.utt_id[idx])
                 self.audio_paths.append(self.audio_paths[idx])
                 self.transcripts.append(self.transcripts[idx])
                 self.phonemes.append(self.phonemes[idx])
@@ -175,12 +178,12 @@ class AudioDataset(Dataset):
         feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
         phonemes = self._parse_transcript(self.phonemes[idx])
         # transcript = self._parse_transcript(self.transcripts[idx])
-        return feature, phonemes
+        return feature, phonemes, self.utt_id[idx]
 
     def shuffle(self):
-        tmp = list(zip(self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags))
         random.shuffle(tmp)
-        self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags = zip(*tmp)
+        self.utt_id, self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)

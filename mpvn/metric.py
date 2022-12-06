@@ -32,18 +32,9 @@ class ErrorRate(object):
     """
 
     def __init__(self, vocab: Vocabulary) -> None:
-        self.total_dist = 0.0
-        self.total_length = 0.0
         self.vocab = vocab
 
     def __call__(self, targets, y_hats):
-        """ Calculating character error rate """
-        dist, length = self._get_distance(targets, y_hats)
-        self.total_dist += dist
-        self.total_length += length
-        return self.total_dist / self.total_length
-
-    def _get_distance(self, targets, y_hats):
         """
         Provides total character distance between targets & y_hats
 
@@ -67,7 +58,7 @@ class ErrorRate(object):
             total_dist += dist
             total_length += length
 
-        return total_dist, total_length
+        return total_dist/total_length
 
     def metric(self, *args, **kwargs):
         raise NotImplementedError
@@ -95,7 +86,6 @@ class WordErrorRate(ErrorRate):
         # map the words to a char array (Levenshtein packages only accepts strings)
         w1 = [chr(unit2char[w]) for w in s1.split()]
         w2 = [chr(unit2char[w]) for w in s2.split()]
-
         dist = Lev.distance(''.join(w1), ''.join(w2))
         length = len(s1.split())
         return dist, length

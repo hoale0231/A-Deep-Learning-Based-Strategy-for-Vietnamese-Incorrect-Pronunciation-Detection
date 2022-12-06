@@ -91,9 +91,10 @@ class LightningGradDataModule(pl.LightningDataModule):
         splits = ['train', 'dev', 'test']
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path)
-            audio_paths, transcripts, phonemes = df.path, df.text, df.phonemes
+            utt_id, audio_paths, transcripts, phonemes = df.utt_id, df.path, df.text, df.phonemes
             self.dataset[split] = self.audio_dataset(
                 dataset_path=self.dataset_path,
+                utt_id=utt_id,
                 audio_paths=audio_paths,
                 transcripts=transcripts,
                 phonemes=phonemes,
@@ -125,9 +126,9 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['dev'], batch_size=self.batch_size)
+        test_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['dev'],
+                dataset=self.dataset['test'],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )
