@@ -160,7 +160,7 @@ class AudioDataset(Dataset):
 
         return feature
 
-    def _parse_transcript(self, transcript: str) -> list:
+    def _parse_phonemes(self, phonemes: str) -> list:
         """
         Parses transcript
 
@@ -170,14 +170,17 @@ class AudioDataset(Dataset):
         Returns
             transcript (list): transcript that added <sos> and <eos> tokens
         """
-        return [self.sos_id] + self.vocab.string_to_label(transcript) + [self.eos_id]
+        return [self.sos_id] + self.vocab.string_to_label(phonemes) + [self.eos_id]
+    
+    def _parse_transcripts(self, transcript: str) -> list:
+        return
 
     def __getitem__(self, idx):
         """ Provides paif of audio & transcript """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
         feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
-        phonemes = self._parse_transcript(self.phonemes[idx])
-        # transcript = self._parse_transcript(self.transcripts[idx])
+        phonemes = self._parse_phonemes(self.phonemes[idx])
+        transcript = self._parse_transcript(self.transcripts[idx])
         return feature, phonemes, self.utt_id[idx]
 
     def shuffle(self):

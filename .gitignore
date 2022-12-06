@@ -145,7 +145,6 @@ dmypy.json
 
 Data
 test.py
-*.ipynb
 Checkpoint/
 test.result
 log.log

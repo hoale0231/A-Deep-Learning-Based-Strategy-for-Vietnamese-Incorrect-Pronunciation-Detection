@@ -80,7 +80,7 @@ class ConformerRNNModel(pl.LightningModule):
         inputs, targets, input_lengths, target_lengths, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, _ = self.decoder(targets, encoder_outputs)
+        outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -101,7 +101,7 @@ class ConformerRNNModel(pl.LightningModule):
         inputs, targets, input_lengths, target_lengths, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn = self.decoder(targets, encoder_outputs=encoder_outputs)
+        outputs, attn, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -139,7 +139,7 @@ class ConformerRNNModel(pl.LightningModule):
         inputs, targets, input_lengths, target_lengths, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, _ = self.decoder(targets, encoder_outputs=encoder_outputs)
+        outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]

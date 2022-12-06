@@ -65,12 +65,20 @@ class RNNDecoder(nn.Module):
 
         outputs, _ = self.rnn(embedded)
         context, attn = self.attention(outputs, encoder_outputs, encoder_outputs)
+        
+        # Create phoneme-level mispronunciation features 
+        # by concat cannonical phonemes and context vector,
+        # but with shift and remove <sos>, <eos> items
+        
+        # mispronunciation_phone_features = torch.cat((embedded[1:], context[:-1]), dim=2)
+        mispronunciation_phone_features = torch.cat((outputs, context), dim=2)
         outputs = torch.cat((outputs, context), dim=2)
+        
 
         outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
 
-        return outputs, attn
+        return outputs, attn, mispronunciation_phone_features
 
 
 
