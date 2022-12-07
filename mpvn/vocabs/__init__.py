@@ -20,4 +20,4 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from mpvn.vocabs.grad import GradVocabulary
+from mpvn.vocabs.grad import GradVocabulary, WordVocabulary

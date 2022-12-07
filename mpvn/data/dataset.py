@@ -62,7 +62,7 @@ class AudioDataset(Dataset):
             vocab: Vocabulary,
             word_vocab: Vocabulary,
             phoneme_map: dict,
-            auto_score: bool = False,
+            auto_score: bool = True,
             apply_spec_augment: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
@@ -207,7 +207,7 @@ class AudioDataset(Dataset):
         phns = self._parse_phonemes(transcript)
         gen_transcript, score = self._random_score(transcript)
         gen_phns = self._parse_phonemes(gen_transcript)
-        
+        gen_transcript = self._parse_transcripts(gen_transcript)
         return phns, gen_transcript, gen_phns, score
 
     def __getitem__(self, idx):

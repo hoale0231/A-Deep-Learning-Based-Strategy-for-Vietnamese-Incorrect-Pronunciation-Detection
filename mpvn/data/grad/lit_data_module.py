@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from mpvn.configs import DictConfig
 from mpvn.vocabs.vocab import Vocabulary
-from mpvn.vocabs import GradVocabulary
+from mpvn.vocabs import GradVocabulary, WordVocabulary
 from mpvn.data.dataset import (
     SpectrogramDataset,
     MelSpectrogramDataset,
@@ -82,12 +82,15 @@ class LightningGradDataModule(pl.LightningDataModule):
         """
         self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         self.phone_map = json.load(open(f"{self.dataset_path}/phone_map.json"))
-        return self.vocab
+        self.word_vocab = WordVocabulary(f"{self.dataset_path}/word_token.txt")
+        return self.vocab, self.word_vocab
 
     def setup(self, stage: Optional[str] = None) -> None:
         """ Split dataset into train, valid, and test. """
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
+        if not self.word_vocab:
+            self.word_vocab = WordVocabulary(f"{self.dataset_path}/word_token.txt")
         
         splits = ['train', 'dev', 'test']
         for path, split in zip(self.manifest_paths, splits):
@@ -99,6 +102,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 audio_paths=audio_paths,
                 transcripts=transcripts,
                 vocab=self.vocab,
+                word_vocab=self.word_vocab,
                 phoneme_map=self.phone_map,
                 apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
                 sample_rate=self.sample_rate,

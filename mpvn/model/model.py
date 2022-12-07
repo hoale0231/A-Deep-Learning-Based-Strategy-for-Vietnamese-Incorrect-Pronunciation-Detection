@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from mpvn.configs import DictConfig
 from mpvn.metric import WordErrorRate
-from mpvn.model.decoder import RNNDecoder
+from mpvn.model.decoder import RNNDecoder, WordDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
@@ -23,6 +23,7 @@ class ConformerRNNModel(pl.LightningModule):
             self,
             configs: DictConfig,
             num_classes: int,
+            num_words: int,
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
@@ -67,6 +68,14 @@ class ConformerRNNModel(pl.LightningModule):
             rnn_type=configs.rnn_type
         )
         
+        self.word_decoder = WordDecoder(
+            num_classes=2,
+            num_words=num_words,
+            hidden_state_dim=configs.encoder_dim,
+            num_heads=configs.num_attention_heads,
+            dropout_p=configs.decoder_dropout_p,
+        )
+        
     def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None) -> None:
         if per:
             self.log(f"{stage}_per", per)
@@ -77,10 +86,11 @@ class ConformerRNNModel(pl.LightningModule):
             self.log(f"{stage}_ctc_loss", ctc_loss)
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs)
+        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -98,10 +108,11 @@ class ConformerRNNModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, attn, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
+        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -136,10 +147,11 @@ class ConformerRNNModel(pl.LightningModule):
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
+        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]

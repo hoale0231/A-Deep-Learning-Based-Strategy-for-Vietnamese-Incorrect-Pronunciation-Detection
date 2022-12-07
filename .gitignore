@@ -149,3 +149,4 @@ Checkpoint/
 test.result
 log.log
 tensorboard/
+data.tar.gz
