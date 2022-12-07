@@ -1,4 +1,4 @@
-import os
+import json
 import logging
 import pandas as pd
 import pytorch_lightning as pl
@@ -81,6 +81,7 @@ class LightningGradDataModule(pl.LightningDataModule):
             Vocabulary
         """
         self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
+        self.phone_map = json.load(open(f"{self.dataset_path}/phone_map.json"))
         return self.vocab
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -98,6 +99,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 audio_paths=audio_paths,
                 transcripts=transcripts,
                 vocab=self.vocab,
+                phoneme_map=self.phone_map,
                 apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,

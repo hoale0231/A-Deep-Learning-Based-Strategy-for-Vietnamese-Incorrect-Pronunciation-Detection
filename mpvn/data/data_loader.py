@@ -45,7 +45,7 @@ def _collate_fn(batch, pad_id: int = 0):
 
     max_seq_sample = max(batch, key=seq_length_)[0]
     max_target_sample = max(batch, key=target_length_)[1]
-    max_score_sample = max(batch, key=target_length_)[3]
+    max_score_sample = max(batch, key=score_length_)[3]
 
     max_seq_size = max_seq_sample.size(0)
     max_target_size = len(max_target_sample)
