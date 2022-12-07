@@ -33,6 +33,9 @@ def _collate_fn(batch, pad_id: int = 0):
 
     def target_length_(p):
         return len(p[1])
+    
+    def score_length_(p):
+        return len(p[3])
 
     # sort by sequence length for rnn.pack_padded_sequence()
     batch = sorted(batch, key=lambda sample: sample[0].size(0), reverse=True)
@@ -42,9 +45,11 @@ def _collate_fn(batch, pad_id: int = 0):
 
     max_seq_sample = max(batch, key=seq_length_)[0]
     max_target_sample = max(batch, key=target_length_)[1]
+    max_score_sample = max(batch, key=target_length_)[3]
 
     max_seq_size = max_seq_sample.size(0)
     max_target_size = len(max_target_sample)
+    max_score_size = len(max_score_sample)
 
     feat_size = max_seq_sample.size(1)
     batch_size = len(batch)
@@ -53,19 +58,31 @@ def _collate_fn(batch, pad_id: int = 0):
 
     targets = torch.zeros(batch_size, max_target_size).to(torch.long)
     targets.fill_(pad_id)
+    
+    phones_gen = torch.zeros(batch_size, max_target_size).to(torch.long)
+    phones_gen.fill_(pad_id)
+    
+    scores = torch.zeros(batch_size, max_score_size, 2).to(torch.long)
+    
+    utt_ids = list()
 
     for x in range(batch_size):
         sample = batch[x]
-        tensor, target, utt_id = sample
+        tensor, target, phone_gen, score, utt_id = sample
         seq_length = tensor.size(0)
 
         seqs[x].narrow(0, 0, seq_length).copy_(tensor)
         targets[x].narrow(0, 0, len(target)).copy_(torch.LongTensor(target))
+        phones_gen[x].narrow(0, 0, len(phone_gen)).copy_(torch.LongTensor(phone_gen))
+        for i, s in enumerate(score):
+            scores[x, i, s] = 1
+        utt_ids.append(utt_id)
+ 
 
     seq_lengths = torch.IntTensor(seq_lengths)
     target_lengths = torch.IntTensor(target_lengths)
 
-    return seqs, targets, seq_lengths, target_lengths, utt_id
+    return seqs, targets, seq_lengths, target_lengths, scores, utt_ids
 
 
 class AudioDataLoader(DataLoader):

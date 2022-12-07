@@ -36,5 +36,5 @@ class GradVocabulary(Vocabulary):
             text = text.replace(' ', '- -').split('-')
             # text = list(text)
         if not isinstance(text, list):
-            raise "text much be str or list"
+            raise Exception("text much be str or list")
         return [self.phone_map[phone] for phone in text]

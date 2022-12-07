@@ -77,7 +77,7 @@ class ConformerRNNModel(pl.LightningModule):
             self.log(f"{stage}_ctc_loss", ctc_loss)
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs)
@@ -98,7 +98,7 @@ class ConformerRNNModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, attn, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
@@ -136,7 +136,7 @@ class ConformerRNNModel(pl.LightningModule):
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, utt_id = batch
+        inputs, targets, input_lengths, target_lengths, score, utt_id = batch
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)

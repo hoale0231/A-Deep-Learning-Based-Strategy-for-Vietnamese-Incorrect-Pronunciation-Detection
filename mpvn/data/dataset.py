@@ -59,8 +59,9 @@ class AudioDataset(Dataset):
             utt_id: str,
             audio_paths: list,
             transcripts: list,
-            phonemes: list,
             vocab: Vocabulary,
+            phoneme_map: dict,
+            auto_score: bool = False,
             apply_spec_augment: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
@@ -75,8 +76,9 @@ class AudioDataset(Dataset):
         self.utt_id = list(utt_id)
         self.audio_paths = list(audio_paths)
         self.transcripts = list(transcripts)
-        self.phonemes = list(phonemes)
+        self.phone_map = phoneme_map
         self.vocab = vocab
+        self.auto_score = auto_score
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
         self.sos_id = vocab.sos_id
@@ -97,8 +99,27 @@ class AudioDataset(Dataset):
                 self.utt_id.append(self.utt_id[idx])
                 self.audio_paths.append(self.audio_paths[idx])
                 self.transcripts.append(self.transcripts[idx])
-                self.phonemes.append(self.phonemes[idx])
-
+                
+        if auto_score:
+            vowels = [
+                'a ă â e ê i o ô ơ u ư y'.split(),
+                'á ắ ấ é ế í ó ố ớ ú ứ ý'.split(),
+                'à ằ ầ è ề ì ò ồ ờ ù ừ ỳ'.split(),
+                'ả ẳ ẩ ẻ ể ỉ ỏ ổ ở ủ ử ỷ'.split(),
+                'ã ẵ ẫ ẽ ễ ĩ õ ỗ ỡ ũ ữ ỹ'.split(),
+                'ạ ặ ậ ẹ ệ ị ọ ộ ợ ụ ự ỵ'.split()
+            ]
+            set_word = set(' '.join(list(transcripts)).split())
+            self.dict_replace = dict()
+            for word in set_word:
+                for vs in vowels:
+                    for ic, char in enumerate(vs):
+                        if char in word:
+                            self.dict_replace[word] = [word.replace(char, v[ic]) for v in vowels 
+                                                if char != v[ic] and word.replace(char, v[ic]) in set_word]
+                            if len(self.dict_replace[word]) == 0:
+                                del self.dict_replace[word]
+    
         self.shuffle()
 
     def _spec_augment(self, feature: Tensor) -> Tensor:
@@ -160,33 +181,41 @@ class AudioDataset(Dataset):
 
         return feature
 
-    def _parse_phonemes(self, phonemes: str) -> list:
+    def _parse_phonemes(self, transcript: str) -> list:
         """
-        Parses transcript
-
-        Args:
-            transcript (str): transcript of audio file
-
-        Returns
-            transcript (list): transcript that added <sos> and <eos> tokens
+        Convert transcript to list phonemes and add <sos> and <eos> tokens
         """
+        words = transcript.split()
+        phonemes = [self.phone_map[word].replace(' ', '-') for word in words]
         return [self.sos_id] + self.vocab.string_to_label(phonemes) + [self.eos_id]
     
+    def _random_score(self, string: str):
+        string_ = string.split()
+        string = string.split()
+        index_replace = random.sample(list(range(len(string))), len(string) // 10 + 1)
+        for i in index_replace:
+            if string[i] in self.dict_replace:
+                string[i] = random.choice(self.dict_replace[string[i]])
+        return ' '.join(string), [int(s == s_) for s, s_ in zip(string, string_)]
+    
     def _parse_transcripts(self, transcript: str) -> list:
-        return
+        phns = self._parse_phonemes(transcript)
+        gen_transcript, score = self._random_score(transcript)
+        gen_phns = self._parse_phonemes(gen_transcript)
+        
+        return phns, gen_phns, score
 
     def __getitem__(self, idx):
         """ Provides paif of audio & transcript """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
         feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
-        phonemes = self._parse_phonemes(self.phonemes[idx])
-        transcript = self._parse_transcript(self.transcripts[idx])
-        return feature, phonemes, self.utt_id[idx]
+        phone, phone_gen, score = self._parse_transcripts(self.transcripts[idx])
+        return feature, phone, phone_gen, score, self.utt_id[idx]
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.phonemes, self.transcripts, self.spec_augment_flags = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)
