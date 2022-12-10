@@ -198,7 +198,7 @@ class AudioDataset(Dataset):
         for i in index_replace:
             if string[i] in self.dict_replace:
                 string[i] = random.choice(self.dict_replace[string[i]])
-        return ' '.join(string), [int(s == s_) for s, s_ in zip(string, string_)]
+        return ' '.join(string), [int(s == s_) + 1 for s, s_ in zip(string, string_)]
     
     def _parse_transcripts(self, string: str):
         return self.word_vocab.string_to_label(string)

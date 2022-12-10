@@ -69,7 +69,7 @@ class ConformerRNNModel(pl.LightningModule):
         )
         
         self.word_decoder = WordDecoder(
-            num_classes=2,
+            num_classes=3,
             num_words=num_words,
             hidden_state_dim=configs.encoder_dim,
             num_heads=configs.num_attention_heads,
@@ -92,7 +92,8 @@ class ConformerRNNModel(pl.LightningModule):
         
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs)
-        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
+        MED_outputs, attn = self.word_decoder(trans, mispronunciation_phone_features)
+
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -105,8 +106,11 @@ class ConformerRNNModel(pl.LightningModule):
         #     target_lengths=target_lengths,
         # )
         
-        # self._log_states('train', loss, cross_entropy_loss, ctc_loss)
-        loss = self.med_criterion(MED_outputs, score)
+        # # self._log_states('train', loss, cross_entropy_loss, ctc_loss)
+        self._log_states('train', loss)
+        
+        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
+
         
         return loss
 
@@ -119,19 +123,20 @@ class ConformerRNNModel(pl.LightningModule):
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
         
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
-        )
+        # loss, ctc_loss, cross_entropy_loss = self.criterion(
+        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
+        #     output_lengths=encoder_output_lengths,
+        #     targets=targets[:, 1:],
+        #     target_lengths=target_lengths,
+        # )
         
         y_hats = outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
  
         # self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
+        self._log_states('valid', per, loss)
         loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
         
         if batch_idx == 0:
@@ -171,6 +176,7 @@ class ConformerRNNModel(pl.LightningModule):
         per = self.per_metric(targets[:, 1:], y_hats)
         
         # self._log_states('test', per, loss, cross_entropy_loss, ctc_loss)
+        self._log_states('test', per, loss)
         with open('test.result', 'a') as file_result:
             print(
                 utt_id,

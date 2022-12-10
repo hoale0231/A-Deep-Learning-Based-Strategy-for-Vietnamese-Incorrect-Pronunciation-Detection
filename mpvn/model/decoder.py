@@ -70,8 +70,8 @@ class RNNDecoder(nn.Module):
         # by concat cannonical phonemes and context vector,
         # but with shift and remove <sos>, <eos> items
         
-        # mispronunciation_phone_features = torch.cat((embedded[1:], context[:-1]), dim=2)
-        mispronunciation_phone_features = torch.cat((outputs, context), dim=2)
+        mispronunciation_phone_features = torch.cat((embedded[1:], context[:-1]), dim=2)
+        # mispronunciation_phone_features = torch.cat((outputs, context), dim=2)
         outputs = torch.cat((outputs, context), dim=2)
         
         outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             

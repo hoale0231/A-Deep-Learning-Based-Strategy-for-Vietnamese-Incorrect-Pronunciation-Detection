@@ -57,7 +57,7 @@ def _collate_fn(batch, pad_id: int = 0):
     trans_gen.fill_(pad_id)
     
     scores = torch.zeros(batch_size, max_word_size).to(torch.long)
-    scores.fill_(-1)
+    scores.fill_(pad_id)
     
     utt_ids = list()
 

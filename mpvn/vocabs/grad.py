@@ -37,7 +37,7 @@ class GradVocabulary(Vocabulary):
             # text = list(text)
         if not isinstance(text, list):
             raise Exception("text much be str or list")
-        return [self.phone_map[phone] for phone in text]
+        return [self.phone_map[phone] for phone in text if phone != '']
     
 class WordVocabulary(Vocabulary):
     """
