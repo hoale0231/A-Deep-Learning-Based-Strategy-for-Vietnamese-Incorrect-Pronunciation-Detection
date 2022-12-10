@@ -109,7 +109,8 @@ class ConformerRNNModel(pl.LightningModule):
           
     def forward(self, inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores):        
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs)
+        pr_outputs, attn_encoder_decoder, _ = self.decoder(r_os, encoder_outputs)
+        _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
         md_outputs, md_attn = self.word_decoder(sent_cs, mispronunciation_phone_features)
 
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
@@ -147,7 +148,6 @@ class ConformerRNNModel(pl.LightningModule):
         
         md_predict = (md_outputs.max(-1)[1] != 1) + 1
         scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
-        print(scores, scores_lenghts, md_predict)
         acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
         f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
         precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
