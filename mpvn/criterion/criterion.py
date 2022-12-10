@@ -36,7 +36,7 @@ class CrossEntropyLoss(nn.Module):
             self,
             decoder_log_probs: Tensor,
             targets: Tensor,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> Tensor:
         cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1))
         return cross_entropy_loss
 

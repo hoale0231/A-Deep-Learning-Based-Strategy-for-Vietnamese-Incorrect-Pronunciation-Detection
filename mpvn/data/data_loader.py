@@ -56,7 +56,8 @@ def _collate_fn(batch, pad_id: int = 0):
     trans_gen = torch.zeros(batch_size, max_word_size).to(torch.long)
     trans_gen.fill_(pad_id)
     
-    scores = torch.zeros(batch_size, max_word_size, 2).to(torch.long)
+    scores = torch.zeros(batch_size, max_word_size).to(torch.long)
+    scores.fill_(-1)
     
     utt_ids = list()
 
@@ -69,16 +70,14 @@ def _collate_fn(batch, pad_id: int = 0):
         targets[x].narrow(0, 0, len(target)).copy_(torch.LongTensor(target))
         trans_gen[x].narrow(0, 0, len(tran_gen)).copy_(torch.LongTensor(tran_gen))
         phones_gen[x].narrow(0, 0, len(phone_gen)).copy_(torch.LongTensor(phone_gen))
-      
-        for i, s in enumerate(score):
-            scores[x, i, s] = 1
+        scores[x].narrow(0, 0, len(score)).copy_(torch.LongTensor(score))
         utt_ids.append(utt_id)
  
 
     seq_lengths = torch.IntTensor(seq_lengths)
     target_lengths = torch.IntTensor(target_lengths)
 
-    return seqs, targets, seq_lengths, target_lengths, trans_gen, phones_gen , scores, utt_ids
+    return seqs, targets, seq_lengths, target_lengths, trans_gen, phones_gen, scores, utt_ids
 
 
 class AudioDataLoader(DataLoader):

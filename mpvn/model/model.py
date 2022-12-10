@@ -14,7 +14,7 @@ from mpvn.model.decoder import RNNDecoder, WordDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
-from mpvn.criterion.criterion import JointCTCCrossEntropyLoss
+from mpvn.criterion.criterion import JointCTCCrossEntropyLoss, CrossEntropyLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
@@ -76,6 +76,8 @@ class ConformerRNNModel(pl.LightningModule):
             dropout_p=configs.decoder_dropout_p,
         )
         
+        self.med_criterion = CrossEntropyLoss(self.vocab.pad_id)
+        
     def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None) -> None:
         if per:
             self.log(f"{stage}_per", per)
@@ -95,24 +97,24 @@ class ConformerRNNModel(pl.LightningModule):
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
         
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
-        )
+        # loss, ctc_loss, cross_entropy_loss = self.criterion(
+        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
+        #     output_lengths=encoder_output_lengths,
+        #     targets=targets[:, 1:],
+        #     target_lengths=target_lengths,
+        # )
         
-        self._log_states('train', loss, cross_entropy_loss, ctc_loss)
-
+        # self._log_states('train', loss, cross_entropy_loss, ctc_loss)
+        loss = self.med_criterion(MED_outputs, score)
+        
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
-        
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         outputs, attn, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
-        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
+        MED_outputs, attn = self.word_decoder(trans, mispronunciation_phone_features)
         
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
@@ -128,8 +130,9 @@ class ConformerRNNModel(pl.LightningModule):
         y_hats = outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
-        
-        self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
+ 
+        # self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
+        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
         
         if batch_idx == 0:
             print("\n1 sample result")
@@ -156,18 +159,18 @@ class ConformerRNNModel(pl.LightningModule):
         max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
         outputs = outputs[:, :max_target_length, :]
         
-        loss, ctc_loss, cross_entropy_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-            output_lengths=encoder_output_lengths,
-            targets=targets[:, 1:],
-            target_lengths=target_lengths,
-        )
+        # loss, ctc_loss, cross_entropy_loss = self.criterion(
+        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
+        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
+        #     output_lengths=encoder_output_lengths,
+        #     targets=targets[:, 1:],
+        #     target_lengths=target_lengths,
+        # )
         
         y_hats = outputs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
         
-        self._log_states('test', per, loss, cross_entropy_loss, ctc_loss)
+        # self._log_states('test', per, loss, cross_entropy_loss, ctc_loss)
         with open('test.result', 'a') as file_result:
             print(
                 utt_id,
@@ -177,6 +180,9 @@ class ConformerRNNModel(pl.LightningModule):
                 sep=',' ,
                 file=file_result
             )
+            
+        loss = self.med_criterion(MED_outputs, score)
+        
 
         return loss
 

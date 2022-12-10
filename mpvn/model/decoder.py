@@ -74,7 +74,6 @@ class RNNDecoder(nn.Module):
         mispronunciation_phone_features = torch.cat((outputs, context), dim=2)
         outputs = torch.cat((outputs, context), dim=2)
         
-
         outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
 
@@ -116,10 +115,8 @@ class WordDecoder(nn.Module):
         context, attn = self.attention(embedded, encoder_outputs, encoder_outputs)
         
         outputs = torch.cat((embedded, context), dim=2)
-
         outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-
         return outputs, attn
 
 
