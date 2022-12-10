@@ -21,6 +21,8 @@
 # SOFTWARE.
 
 import Levenshtein as Lev
+import torch
+from torch import Tensor
 from mpvn.vocabs.vocab import Vocabulary
 
 class ErrorRate(object):
@@ -122,3 +124,10 @@ class CharacterErrorRate(ErrorRate):
         length = len(s1.replace(' ', ''))
 
         return dist, length
+
+
+def accuracy(y: Tensor, y_hat: Tensor, length: Tensor) -> float:
+    accs = list()
+    for y_, yhat_, l in zip(y, y_hat, length.to(torch.long)):
+        accs.append(torch.mean((y_ == yhat_)[:l].to(torch.float)))
+    return float(torch.sum(torch.stack(accs))) / length.shape[0]

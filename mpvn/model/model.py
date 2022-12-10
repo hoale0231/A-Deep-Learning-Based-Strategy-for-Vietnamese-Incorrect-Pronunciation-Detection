@@ -9,7 +9,7 @@ from typing import Dict, Union
 import matplotlib.pyplot as plt
 
 from mpvn.configs import DictConfig
-from mpvn.metric import WordErrorRate
+from mpvn.metric import WordErrorRate, accuracy
 from mpvn.model.decoder import RNNDecoder, WordDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
@@ -78,9 +78,11 @@ class ConformerRNNModel(pl.LightningModule):
         
         self.med_criterion = CrossEntropyLoss(self.vocab.pad_id)
         
-    def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None) -> None:
-        if per:
+    def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None, md_acc: float = None) -> None:
+        if per != None:
             self.log(f"{stage}_per", per)
+        if md_acc != None:
+            self.log(f"{stage}", md_acc)
         self.log(f"{stage}_loss", loss)
         if cross_entropy_loss:
             self.log(f"{stage}_cross_entropy_loss", cross_entropy_loss)
@@ -106,12 +108,11 @@ class ConformerRNNModel(pl.LightningModule):
         #     target_lengths=target_lengths,
         # )
         
-        # # self._log_states('train', loss, cross_entropy_loss, ctc_loss)
-        self._log_states('train', loss)
-        
+        acc = accuracy(y=score, y_hat=MED_outputs.max(-1)[1], length=torch.sum(score!=self.vocab.pad_id, axis=1))
         loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
 
         
+        self._log_states('train', loss=loss, md_acc=acc)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
@@ -131,29 +132,38 @@ class ConformerRNNModel(pl.LightningModule):
         #     target_lengths=target_lengths,
         # )
         
+        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
+        
         y_hats = outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(targets[:, 1:], y_hats)
+        acc = accuracy(y=score, y_hat=MED_outputs.max(-1)[1], length=torch.sum(score!=self.vocab.pad_id, axis=1))
  
-        # self._log_states('valid', per, loss, cross_entropy_loss, ctc_loss)
-        self._log_states('valid', per, loss)
-        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
-        
         if batch_idx == 0:
-            print("\n1 sample result")
+            print("\nSample result")
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
             print("DP    :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
             print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]).replace('   ', '-').replace(' ', ''))
+            print("Per:", per)
+            
             print("MED output:", MED_outputs.max(-1)[1][0])
             print("Score:", score[0])
-            print("Per:", per)
-            print("Attention:", attn.shape)
+            print("Accuracy:", acc)
+                    
             attn = torch.sum(attn, dim=0).detach().cpu()
-            print(attn.shape)
+            print("Attention:", attn.shape)
+            
             plt.imshow(attn, interpolation='none')
             plt.show()
+            
             self.save_attn = attn
+            self.sum_acc = 0
+            self.count_sample = 0
+        
+        self.sum_acc += MED_outputs.max(-1)[1][0]
+        self.count_sample += len(score)
 
+        self._log_states('valid', loss=loss, per=per, md_acc=acc)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
