@@ -80,4 +80,42 @@ class JointCTCCrossEntropyLoss(nn.Module):
         ctc_loss = self.ctc_loss(encoder_log_probs, targets, output_lengths, target_lengths) if self.ctc_weight > 0 else 0
         cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1)) if self.cross_entropy_weight > 0 else 0
         loss = cross_entropy_loss * self.cross_entropy_weight + ctc_loss * self.ctc_weight
-        return loss, ctc_loss, cross_entropy_loss
+        return loss
+
+class JointLoss(nn.Module):
+    def __init__(
+            self,
+            ignore_index: int,
+            reduction='mean',
+            blank_id: int = None,
+            ctc_weight: float = 0.3,
+            cross_entropy_weight: float = 0.7,
+            md_weight: float = 0.7,
+            pr_weight: float = 0.3
+    ) -> None:
+        super(JointLoss, self).__init__()
+        self.pr_loss = JointCTCCrossEntropyLoss(
+            ignore_index=ignore_index,
+            reduction=reduction,
+            blank_id=blank_id,
+            cross_entropy_weight=cross_entropy_weight,
+            ctc_weight=ctc_weight,
+        )
+        self.md_loss = CrossEntropyLoss(ignore_index=ignore_index, reduction=reduction)
+        self.md_weight = md_weight
+        self.pr_weight = pr_weight
+
+    def forward(
+            self,
+            encoder_log_probs: Tensor,
+            pr_log_probs: Tensor,
+            encoder_output_lengths: Tensor,
+            r_os: Tensor,
+            r_os_lengths: Tensor,
+            md_log_probs: Tensor,
+            score: Tensor
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        pr_loss = self.pr_loss(encoder_log_probs, pr_log_probs, encoder_output_lengths, r_os, r_os_lengths) if self.pr_weight > 0 else 0
+        md_loss = self.md_loss(md_log_probs, score) if self.md_weight > 0 else 0
+        loss = md_loss * self.md_weight + pr_loss * self.pr_weight
+        return loss, pr_loss, md_loss

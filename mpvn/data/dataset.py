@@ -59,10 +59,11 @@ class AudioDataset(Dataset):
             utt_id: str,
             audio_paths: list,
             transcripts: list,
+            score: list,
             vocab: Vocabulary,
             word_vocab: Vocabulary,
             phoneme_map: dict,
-            auto_score: bool = True,
+            auto_gen_score: bool = True,
             apply_spec_augment: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
@@ -77,10 +78,11 @@ class AudioDataset(Dataset):
         self.utt_id = list(utt_id)
         self.audio_paths = list(audio_paths)
         self.transcripts = list(transcripts)
+        self.score = list(score)
         self.phone_map = phoneme_map
         self.vocab = vocab
         self.word_vocab = word_vocab
-        self.auto_score = auto_score
+        self.auto_gen_score = auto_gen_score
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
         self.sos_id = vocab.sos_id
@@ -101,8 +103,8 @@ class AudioDataset(Dataset):
                 self.utt_id.append(self.utt_id[idx])
                 self.audio_paths.append(self.audio_paths[idx])
                 self.transcripts.append(self.transcripts[idx])
-                
-        if auto_score:
+                self.score.append(self.score[idx])
+        if auto_gen_score:
             vowels = [
                 'a ă â e ê i o ô ơ u ư y'.split(),
                 'á ắ ấ é ế í ó ố ớ ú ứ ý'.split(),
@@ -209,18 +211,35 @@ class AudioDataset(Dataset):
         gen_phns = self._parse_phonemes(gen_transcript)
         gen_transcript = self._parse_transcripts(gen_transcript)
         return phns, gen_transcript, gen_phns, score
+    
+    def _parse_score(self, score: str) -> list:
+        return [int(s) for s in score]
 
     def __getitem__(self, idx):
-        """ Provides paif of audio & transcript """
+        """
+        Return:
+            - audio_features: extract from .wav file
+            - r_o: canonical phonemes that the speaker was expected to pronounce
+            - sent_c: transcripts that the speaker was expected to pronounce
+            - r_c: canonical phonemes that the speaker was expected to pronounce
+            - score: score of transcripts
+            - utt_id: id of sample, help in logging
+        """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
-        feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
-        phone, gen_trans, phone_gen, score = self._process_transcripts(self.transcripts[idx])
-        return feature, phone, gen_trans, phone_gen, score, self.utt_id[idx]
+        audio_feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
+        if self.auto_gen_score:
+            r_o, sent_c, r_c, score = self._process_transcripts(self.transcripts[idx])
+        else:
+            r_o = None
+            sent_c = self._parse_transcripts(self.transcripts[idx])
+            r_c = self._parse_phonemes(self.transcripts[idx])
+            score = self._parse_audio(self.score[idx])
+        return audio_feature, r_o, sent_c, r_c, score, self.utt_id[idx]
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)

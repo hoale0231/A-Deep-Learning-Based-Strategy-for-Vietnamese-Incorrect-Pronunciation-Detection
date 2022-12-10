@@ -31,53 +31,53 @@ def _collate_fn(batch, pad_id: int = 0):
     # sort by sequence length for rnn.pack_padded_sequence()
     batch = sorted(batch, key=lambda sample: sample[0].size(0), reverse=True)
 
-    seq_lengths = [len(s[0]) for s in batch]
-    target_lengths = [len(s[1]) - 1 for s in batch]
+    input_lengths = [len(s[0]) for s in batch]
+    r_os_lengths = [len(s[1]) - 1 for s in batch]
 
-    max_seq_sample = max(batch, key=lambda x: len(x[0]))[0]
-    max_target_sample = max(batch, key=lambda x: len(x[1]))[1]
-    max_word_sample = max(batch, key=lambda x: len(x[2]))[2]
+    max_inputs_sample = max(batch, key=lambda x: len(x[0]))[0]
+    max_r_o_sample = max(batch, key=lambda x: len(x[1]))[1]
+    max_sent_sample = max(batch, key=lambda x: len(x[2]))[2]
 
-    max_seq_size = max_seq_sample.size(0)
-    max_target_size = len(max_target_sample)
-    max_word_size = len(max_word_sample)
+    max_input_length = max_inputs_sample.size(0)
+    max_r_o_length = len(max_r_o_sample)
+    max_sent_length = len(max_sent_sample)
 
-    feat_size = max_seq_sample.size(1)
+    feat_dim = max_inputs_sample.size(1)
     batch_size = len(batch)
 
-    seqs = torch.zeros(batch_size, max_seq_size, feat_size)
+    inputs = torch.zeros(batch_size, max_input_length, feat_dim)
 
-    targets = torch.zeros(batch_size, max_target_size).to(torch.long)
-    targets.fill_(pad_id)
+    r_os = torch.zeros(batch_size, max_r_o_length).to(torch.long)
+    r_os.fill_(pad_id)
     
-    phones_gen = torch.zeros(batch_size, max_target_size).to(torch.long)
-    phones_gen.fill_(pad_id)
+    r_cs = torch.zeros(batch_size, max_r_o_length).to(torch.long)
+    r_cs.fill_(pad_id)
     
-    trans_gen = torch.zeros(batch_size, max_word_size).to(torch.long)
-    trans_gen.fill_(pad_id)
+    sent_cs = torch.zeros(batch_size, max_sent_length).to(torch.long)
+    sent_cs.fill_(pad_id)
     
-    scores = torch.zeros(batch_size, max_word_size).to(torch.long)
+    scores = torch.zeros(batch_size, max_sent_length).to(torch.long)
     scores.fill_(pad_id)
     
     utt_ids = list()
 
     for x in range(batch_size):
         sample = batch[x]
-        tensor, target, tran_gen, phone_gen, score, utt_id = sample
-        seq_length = tensor.size(0)
+        input, r_o, sent_c, r_c, score, utt_id = sample
+        seq_length = input.size(0)
 
-        seqs[x].narrow(0, 0, seq_length).copy_(tensor)
-        targets[x].narrow(0, 0, len(target)).copy_(torch.LongTensor(target))
-        trans_gen[x].narrow(0, 0, len(tran_gen)).copy_(torch.LongTensor(tran_gen))
-        phones_gen[x].narrow(0, 0, len(phone_gen)).copy_(torch.LongTensor(phone_gen))
+        inputs[x].narrow(0, 0, seq_length).copy_(input)
+        r_os[x].narrow(0, 0, len(r_o)).copy_(torch.LongTensor(r_o))
+        sent_cs[x].narrow(0, 0, len(sent_c)).copy_(torch.LongTensor(sent_c))
+        r_cs[x].narrow(0, 0, len(r_c)).copy_(torch.LongTensor(r_c))
         scores[x].narrow(0, 0, len(score)).copy_(torch.LongTensor(score))
         utt_ids.append(utt_id)
  
 
-    seq_lengths = torch.IntTensor(seq_lengths)
-    target_lengths = torch.IntTensor(target_lengths)
+    input_lengths = torch.IntTensor(input_lengths)
+    r_os_lengths = torch.IntTensor(r_os_lengths)
 
-    return seqs, targets, seq_lengths, target_lengths, trans_gen, phones_gen, scores, utt_ids
+    return inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids
 
 
 class AudioDataLoader(DataLoader):

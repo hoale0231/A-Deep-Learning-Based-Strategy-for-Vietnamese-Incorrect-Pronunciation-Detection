@@ -1,29 +1,8 @@
-# MIT License
-#
-# Copyright (c) 2021 Soohwan Kim
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 import Levenshtein as Lev
 import torch
 from torch import Tensor
 from mpvn.vocabs.vocab import Vocabulary
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 class ErrorRate(object):
     """
@@ -127,7 +106,25 @@ class CharacterErrorRate(ErrorRate):
 
 
 def accuracy(y: Tensor, y_hat: Tensor, length: Tensor) -> float:
-    accs = list()
-    for y_, yhat_, l in zip(y, y_hat, length.to(torch.long)):
-        accs.append(torch.mean((y_ == yhat_)[:l].to(torch.float)))
-    return float(torch.sum(torch.stack(accs))) / length.shape[0]
+    length = length.to(torch.long)
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    return accuracy_score(y, y_hat)
+
+def f1(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
+    length = length.to(torch.long)
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    return f1_score(y, y_hat, pos_label=pos_label)
+
+def precision(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
+    length = length.to(torch.long)
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    return precision_score(y, y_hat, pos_label=pos_label)
+
+def recall(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
+    length = length.to(torch.long)
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    return recall_score(y, y_hat, pos_label=pos_label)

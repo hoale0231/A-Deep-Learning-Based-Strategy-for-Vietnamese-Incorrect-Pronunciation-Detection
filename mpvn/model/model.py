@@ -7,14 +7,15 @@ from torch.optim import Adam, Adadelta, Adagrad, SGD, Adamax, AdamW, ASGD
 import pytorch_lightning as pl
 from typing import Dict, Union
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from mpvn.configs import DictConfig
-from mpvn.metric import WordErrorRate, accuracy
+from mpvn.metric import *
 from mpvn.model.decoder import RNNDecoder, WordDecoder
 from mpvn.model.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
-from mpvn.criterion.criterion import JointCTCCrossEntropyLoss, CrossEntropyLoss
+from mpvn.criterion.criterion import JointLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
@@ -38,6 +39,8 @@ class ConformerRNNModel(pl.LightningModule):
             blank_id=self.vocab.blank_id,
             ctc_weight=configs.ctc_weight,
             cross_entropy_weight=configs.cross_entropy_weight,
+            md_weight=configs.md_weight,
+            pr_weight=configs.pr_weight
         )
 
         self.encoder = ConformerEncoder(
@@ -76,132 +79,132 @@ class ConformerRNNModel(pl.LightningModule):
             dropout_p=configs.decoder_dropout_p,
         )
         
-        self.med_criterion = CrossEntropyLoss(self.vocab.pad_id)
-        
-    def _log_states(self, stage: str, loss: float, cross_entropy_loss: float = None, ctc_loss: float = None, per: float = None, md_acc: float = None) -> None:
+    def _log_states(
+        self, 
+        stage: str, 
+        loss: float, 
+        pr_loss: float = None, 
+        md_loss: float = None, 
+        per: float = None, 
+        acc: float = None,
+        f1: float = None,
+        precision: float = None,
+        recall: float = None
+    ) -> None:
+        self.log(f"{stage}_loss", loss)
+        if pr_loss:
+            self.log(f"{stage}_pr_loss", pr_loss)
+        if md_loss:
+            self.log(f"{stage}_md_loss", md_loss)
         if per != None:
             self.log(f"{stage}_per", per)
-        if md_acc != None:
-            self.log(f"{stage}", md_acc)
-        self.log(f"{stage}_loss", loss)
-        if cross_entropy_loss:
-            self.log(f"{stage}_cross_entropy_loss", cross_entropy_loss)
-        if ctc_loss:
-            self.log(f"{stage}_ctc_loss", ctc_loss)
+        if acc != None:
+            self.log(f"{stage}_acc", acc)
+        if f1 != None:
+            self.log(f"{stage}_f1", f1)
+        if precision != None:
+            self.log(f"{stage}_precision", precision)
+        if recall != None:
+            self.log(f"{recall}_acc", recall)
+          
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores):        
+        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
+        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs)
+        md_outputs, md_attn = self.word_decoder(sent_cs, mispronunciation_phone_features)
+
+        max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
+        pr_outputs = pr_outputs[:, :max_target_length, :]
+        
+        loss, pr_loss, md_loss = self.criterion(
+            encoder_log_probs=encoder_log_probs.transpose(0, 1),
+            pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
+            encoder_output_lengths=encoder_output_lengths,
+            r_os=r_os[:, 1:],
+            r_os_lengths=r_os_lengths,
+            md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)),
+            score=scores
+        )
+        
+        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
-        
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs)
-        MED_outputs, attn = self.word_decoder(trans, mispronunciation_phone_features)
-
-        
-        max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
-        outputs = outputs[:, :max_target_length, :]
-        
-        # loss, ctc_loss, cross_entropy_loss = self.criterion(
-        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
-        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-        #     output_lengths=encoder_output_lengths,
-        #     targets=targets[:, 1:],
-        #     target_lengths=target_lengths,
-        # )
-        
-        acc = accuracy(y=score, y_hat=MED_outputs.max(-1)[1], length=torch.sum(score!=self.vocab.pad_id, axis=1))
-        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
-
-        
-        self._log_states('train', loss=loss, md_acc=acc)
+        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        )
+        self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, attn, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
-        MED_outputs, attn = self.word_decoder(trans, mispronunciation_phone_features)
+        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        )
         
-        max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
-        outputs = outputs[:, :max_target_length, :]
-        
-        # loss, ctc_loss, cross_entropy_loss = self.criterion(
-        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
-        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-        #     output_lengths=encoder_output_lengths,
-        #     targets=targets[:, 1:],
-        #     target_lengths=target_lengths,
-        # )
-        
-        loss = self.med_criterion(MED_outputs.contiguous().view(-1, MED_outputs.size(-1)), score)
-        
-        y_hats = outputs.max(-1)[1]
+        y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
-        per = self.per_metric(targets[:, 1:], y_hats)
-        acc = accuracy(y=score, y_hat=MED_outputs.max(-1)[1], length=torch.sum(score!=self.vocab.pad_id, axis=1))
+        per = self.per_metric(r_os[:, 1:], y_hats)
+        
+        md_predict = (md_outputs.max(-1)[1] != 1) + 1
+        scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
+        print(scores, scores_lenghts, md_predict)
+        acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
+        f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
+        precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
+        recall_ = recall(y=scores, y_hat=md_predict, length=scores_lenghts)
  
         if batch_idx == 0:
             print("\nSample result")
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
-            print("DP    :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
-            print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]).replace('   ', '-').replace(' ', ''))
+            print("PR       :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
+            print("Target   :", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
             print("Per:", per)
             
-            print("MED output:", MED_outputs.max(-1)[1][0])
-            print("Score:", score[0])
+            print("MED output   :", md_outputs.max(-1)[1][0])
+            print("Score        :", scores[0])
+            
             print("Accuracy:", acc)
                     
-            attn = torch.sum(attn, dim=0).detach().cpu()
-            print("Attention:", attn.shape)
-            
-            plt.imshow(attn, interpolation='none')
+            md_attn = torch.sum(md_attn, dim=0).detach().cpu()
+            print("Attention:", md_attn.shape)
+            plt.imshow(md_attn, interpolation='none')
             plt.show()
-            
-            self.save_attn = attn
-            self.sum_acc = 0
-            self.count_sample = 0
-        
-        self.sum_acc += acc
-        self.count_sample += len(score)
 
-        self._log_states('valid', loss=loss, per=per, md_acc=acc)
+        self._log_states('valid', loss=loss, per=per, acc=acc, f1=f1_, precision=precision_, recall=recall_)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, targets, input_lengths, target_lengths, trans, phones, score, utt_id = batch
+        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        )
         
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        outputs, _, mispronunciation_phone_features = self.decoder(targets, encoder_outputs=encoder_outputs)
-        MED_outputs = self.word_decoder(trans, mispronunciation_phone_features)
+        y_hats = pr_outputs.max(-1)[1]
+        y_hats_encoder = encoder_log_probs.max(-1)[1]
+        per = self.per_metric(r_os[:, 1:], y_hats)
         
-        max_target_length = targets.size(1) - 1  # minus the start of sequence symbol
-        outputs = outputs[:, :max_target_length, :]
+        scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
+        md_predict = md_outputs.max(-1)[1]
+        acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
+        f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
+        precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
+        recall_ = recall(y=scores, y_hat=md_predict, length=scores_lenghts)
         
-        # loss, ctc_loss, cross_entropy_loss = self.criterion(
-        #     encoder_log_probs=encoder_log_probs.transpose(0, 1),
-        #     decoder_log_probs=outputs.contiguous().view(-1, outputs.size(-1)),
-        #     output_lengths=encoder_output_lengths,
-        #     targets=targets[:, 1:],
-        #     target_lengths=target_lengths,
-        # )
-        
-        y_hats = outputs.max(-1)[1]
-        per = self.per_metric(targets[:, 1:], y_hats)
-        
-        # self._log_states('test', per, loss, cross_entropy_loss, ctc_loss)
-        self._log_states('test', per, loss)
-        with open('test.result', 'a') as file_result:
-            print(
-                utt_id,
-                per,
-                self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''),
-                self.vocab.label_to_string(targets[0, 1:]).replace('   ', '-').replace(' ', ''),
-                sep=',' ,
-                file=file_result
+        if batch_idx == 0:
+            self.df = pd.DataFrame(
+                columns= ['utt_id', 'phones', 'phones_predict', 'score', 
+                 'score_predict', 'per', 'accuracy', 'f1', 'precision', 'recall']
             )
-            
-        loss = self.med_criterion(MED_outputs, score)
         
-
+        self.df.loc[len(self.df)] = [
+            utt_ids[0], 
+            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
+            r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
+            scores[0],
+            md_outputs.max(-1)[1][0],
+            per, acc, f1_, precision_, recall_
+        ]
+            
         return loss
 
     def configure_optimizers(self) -> Dict[str, Union[torch.optim.Optimizer, object, str]]:
@@ -263,14 +266,17 @@ class ConformerRNNModel(pl.LightningModule):
             ignore_index: int,
             ctc_weight: float = 0.3,
             cross_entropy_weight: float = 0.7,
-            blank_id: int = None
+            blank_id: int = None,
+            md_weight: float = 0.7,
+            pr_weight: float = 0.3
     ) -> nn.Module:
         """ Configure criterion """
-        return JointCTCCrossEntropyLoss(
+        return JointLoss(
             ignore_index=ignore_index,
             reduction="mean",
             blank_id=blank_id,
             cross_entropy_weight=cross_entropy_weight,
             ctc_weight=ctc_weight,
+            md_weight=md_weight,
+            pr_weight=pr_weight
         )
-
