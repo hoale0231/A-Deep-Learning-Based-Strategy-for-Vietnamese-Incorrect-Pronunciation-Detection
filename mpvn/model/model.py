@@ -160,7 +160,7 @@ class ConformerRNNModel(pl.LightningModule):
             self.sum_acc = 0
             self.count_sample = 0
         
-        self.sum_acc += MED_outputs.max(-1)[1][0]
+        self.sum_acc += acc
         self.count_sample += len(score)
 
         self._log_states('valid', loss=loss, per=per, md_acc=acc)
