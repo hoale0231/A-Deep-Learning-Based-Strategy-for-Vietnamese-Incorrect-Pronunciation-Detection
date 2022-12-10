@@ -144,6 +144,8 @@ class ConformerRNNModel(pl.LightningModule):
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
             print("DP    :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
             print("Target:", targets[0, 1:].shape, self.vocab.label_to_string(targets[0, 1:]).replace('   ', '-').replace(' ', ''))
+            print("MED output:", MED_outputs.max(-1)[1][0])
+            print("Score:", score[0])
             print("Per:", per)
             print("Attention:", attn.shape)
             attn = torch.sum(attn, dim=0).detach().cpu()

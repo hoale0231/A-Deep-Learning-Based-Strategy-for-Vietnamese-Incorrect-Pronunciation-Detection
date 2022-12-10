@@ -194,7 +194,7 @@ class AudioDataset(Dataset):
     def _random_score(self, string: str):
         string_ = string.split()
         string = string.split()
-        index_replace = random.sample(list(range(len(string))), len(string) // 10 + 1)
+        index_replace = random.sample(list(range(len(string))), len(string) // 3)
         for i in index_replace:
             if string[i] in self.dict_replace:
                 string[i] = random.choice(self.dict_replace[string[i]])
