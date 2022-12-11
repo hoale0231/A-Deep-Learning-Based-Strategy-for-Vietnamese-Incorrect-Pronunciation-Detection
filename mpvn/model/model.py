@@ -105,7 +105,7 @@ class ConformerRNNModel(pl.LightningModule):
         if precision != None:
             self.log(f"{stage}_precision", precision)
         if recall != None:
-            self.log(f"{recall}_acc", recall)
+            self.log(f"{stage}_recall", recall)
           
     def forward(self, inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores):        
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
