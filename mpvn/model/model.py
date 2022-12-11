@@ -188,8 +188,8 @@ class ConformerRNNModel(pl.LightningModule):
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
+        md_predict = (md_outputs.max(-1)[1] != 1) + 1
         scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
-        md_predict = md_outputs.max(-1)[1]
         acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
         f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
         precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
@@ -200,13 +200,13 @@ class ConformerRNNModel(pl.LightningModule):
                 columns= ['utt_id', 'phones', 'phones_predict', 'score', 
                  'score_predict', 'per', 'accuracy', 'f1', 'precision', 'recall']
             )
-        
+            
         self.df.loc[len(self.df)] = [
             utt_ids[0], 
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            scores[0],
-            md_outputs.max(-1)[1][0],
+            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
+            scores[0].cpu().tolist(),
+            md_outputs.max(-1)[1][0].cpu().tolist(),
             per, acc, f1_, precision_, recall_
         ]
             
