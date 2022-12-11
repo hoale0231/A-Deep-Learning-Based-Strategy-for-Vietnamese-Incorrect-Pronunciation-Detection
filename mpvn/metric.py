@@ -107,24 +107,24 @@ class CharacterErrorRate(ErrorRate):
 
 def accuracy(y: Tensor, y_hat: Tensor, length: Tensor) -> float:
     length = length.to(torch.long)
-    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
-    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)]).cpu()
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)]).cpu()
     return accuracy_score(y, y_hat)
 
 def f1(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
     length = length.to(torch.long)
-    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
-    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)]).cpu()
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)]).cpu()
     return f1_score(y, y_hat, pos_label=pos_label)
 
 def precision(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
     length = length.to(torch.long)
-    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
-    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)]).cpu()
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)]).cpu()
     return precision_score(y, y_hat, pos_label=pos_label)
 
 def recall(y: Tensor, y_hat: Tensor, length: Tensor, pos_label: int = 1) -> float:
     length = length.to(torch.long)
-    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)])
-    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)])
+    y = torch.concat([y_[:l_] for y_, l_ in zip(y, length)]).cpu()
+    y_hat = torch.concat([y_[:l_] for y_, l_ in zip(y_hat, length)]).cpu()
     return recall_score(y, y_hat, pos_label=pos_label)

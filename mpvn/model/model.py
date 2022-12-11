@@ -154,7 +154,7 @@ class ConformerRNNModel(pl.LightningModule):
         recall_ = recall(y=scores, y_hat=md_predict, length=scores_lenghts)
  
         if batch_idx == 0:
-            print("\nSample result")
+            print("\nResult of", utt_ids[0])
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
             print("PR       :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
             print("Target   :", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
@@ -164,9 +164,14 @@ class ConformerRNNModel(pl.LightningModule):
             print("Score        :", scores[0])
             
             print("Accuracy:", acc)
+            
+            attn_encoder_decoder = torch.sum(attn_encoder_decoder, dim=0).detach().cpu()
+            print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
+            plt.imshow(attn_encoder_decoder, interpolation='none')
+            plt.show()
                     
             md_attn = torch.sum(md_attn, dim=0).detach().cpu()
-            print("Attention:", md_attn.shape)
+            print("Word-decoder Attention:", md_attn.shape)
             plt.imshow(md_attn, interpolation='none')
             plt.show()
 
