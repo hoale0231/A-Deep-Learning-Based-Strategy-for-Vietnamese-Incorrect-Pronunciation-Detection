@@ -37,10 +37,12 @@ def _collate_fn(batch, pad_id: int = 0):
     max_inputs_sample = max(batch, key=lambda x: len(x[0]))[0]
     max_r_o_sample = max(batch, key=lambda x: len(x[1]))[1]
     max_sent_sample = max(batch, key=lambda x: len(x[2]))[2]
+    max_r_c_sample = max(batch, key=lambda x: len(x[3]))[3]
 
     max_input_length = max_inputs_sample.size(0)
     max_r_o_length = len(max_r_o_sample)
     max_sent_length = len(max_sent_sample)
+    max_r_c_length = len(max_r_c_sample)
 
     feat_dim = max_inputs_sample.size(1)
     batch_size = len(batch)
@@ -50,7 +52,7 @@ def _collate_fn(batch, pad_id: int = 0):
     r_os = torch.zeros(batch_size, max_r_o_length).to(torch.long)
     r_os.fill_(pad_id)
     
-    r_cs = torch.zeros(batch_size, max_r_o_length).to(torch.long)
+    r_cs = torch.zeros(batch_size, max_r_c_length).to(torch.long)
     r_cs.fill_(pad_id)
     
     sent_cs = torch.zeros(batch_size, max_sent_length).to(torch.long)
