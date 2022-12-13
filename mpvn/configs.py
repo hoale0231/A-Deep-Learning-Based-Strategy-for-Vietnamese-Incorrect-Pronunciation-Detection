@@ -9,6 +9,7 @@ class DictConfig:
 
     # SpecAugment
     apply_spec_augment: bool = True
+    auto_gen_score: bool = (True, True, True, False) # Train, dev, test, valid 
     freq_mask_para: int = 27
     freq_mask_num: int = 2
     time_mask_num: int = 4

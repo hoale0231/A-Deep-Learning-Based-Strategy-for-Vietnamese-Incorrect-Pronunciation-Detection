@@ -61,7 +61,6 @@ class AudioDataset(Dataset):
             transcripts: list,
             score: list,
             vocab: Vocabulary,
-            word_vocab: Vocabulary,
             phoneme_map: dict,
             auto_gen_score: bool = True,
             apply_spec_augment: bool = False,
@@ -81,7 +80,6 @@ class AudioDataset(Dataset):
         self.score = list(score)
         self.phone_map = phoneme_map
         self.vocab = vocab
-        self.word_vocab = word_vocab
         self.auto_gen_score = auto_gen_score
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
@@ -222,16 +220,13 @@ class AudioDataset(Dataset):
         score = [int(p == p_) for p, p_ in zip(phonemes, phonemes_replaced)]
         return [self.sos_id] + self.vocab.string_to_label(' '.join(phonemes_replaced)) + [self.eos_id], score
     
-    def _parse_transcripts(self, string: str):
-        return self.word_vocab.string_to_label(string)
-    
     def _process_transcripts(self, transcript: str) -> list:
         phns = self._parse_phonemes(transcript)
         gen_phns, score = self._random_score(transcript)
         return phns, gen_phns, score
     
     def _parse_score(self, score: str) -> list:
-        return [int(s) for s in score]
+        return [int(s == 2) for s in score.split()]
 
     def __getitem__(self, idx):
         """
@@ -248,9 +243,10 @@ class AudioDataset(Dataset):
         if self.auto_gen_score:
             r_o, r_c, score = self._process_transcripts(self.transcripts[idx])
         else:
-            r_o = None
-            r_c = self._parse_phonemes(self.transcripts[idx])
-            score = self._parse_audio(self.score[idx])
+            r_o = r_c = self._parse_phonemes(self.transcripts[idx])
+            score = self._parse_score(self.score[idx])
+            if len(self.transcripts[idx].split()) != len(score):
+                raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
         return audio_feature, r_o, r_c, score, self.utt_id[idx]
 
     def shuffle(self):

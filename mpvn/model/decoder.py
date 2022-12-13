@@ -113,7 +113,6 @@ class WordDecoder(nn.Module):
     def __init__(
             self,
             num_classes: int,
-            num_words: int,
             hidden_state_dim: int = 1024,
             num_heads: int = 4,
             num_layers: int = 1,
@@ -122,7 +121,6 @@ class WordDecoder(nn.Module):
     ) -> None:
         super(WordDecoder, self).__init__()
         self.hidden_state_dim = hidden_state_dim
-        self.embedding = nn.Embedding(num_words, hidden_state_dim)
         self.input_dropout = nn.Dropout(dropout_p)
         self.self_attention = MultiHeadedSelfAttentionModule(hidden_state_dim, num_heads=num_heads)
         self.rnn = self.supported_rnns[rnn_type.lower()](
@@ -145,16 +143,11 @@ class WordDecoder(nn.Module):
             self,
             inputs: Tensor = None
     ) -> Tensor:
-        # batch_size, input_lengths = inputs.size(0), inputs.size(1)
-
-        # embedded = self.embedding(words)
-        # embedded = self.input_dropout(embedded)
         inputs = self.ff(inputs)
 
         output = self.self_attention(inputs)
         output, _ = self.rnn(output)
-        output = self.fc(output[:,-1,:]).log_softmax(dim=-1)             
-        # outputs = outputs.view(batch_size, input_lengths, -1).squeeze(1)
+        output = self.fc(output[:,-1,:]).log_softmax(dim=-1)
         return output
 
 

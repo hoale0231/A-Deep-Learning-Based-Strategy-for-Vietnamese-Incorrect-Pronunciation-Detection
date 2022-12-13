@@ -25,7 +25,6 @@ class ConformerRNNModel(pl.LightningModule):
             self,
             configs: DictConfig,
             num_classes: int,
-            num_words: int,
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
@@ -75,7 +74,6 @@ class ConformerRNNModel(pl.LightningModule):
         
         self.word_decoder = WordDecoder(
             num_classes=2,
-            num_words=num_words,
             hidden_state_dim=configs.encoder_dim,
             num_heads=configs.num_attention_heads,
             dropout_p=configs.decoder_dropout_p,
@@ -114,7 +112,6 @@ class ConformerRNNModel(pl.LightningModule):
         pr_outputs, attn_encoder_decoder, _ = self.decoder(r_os, encoder_outputs)
         _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
         md_outputs = self.word_decoder(mispronunciation_phone_features)
-
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
         pr_outputs = pr_outputs[:, :max_target_length, :]
         
@@ -152,9 +149,9 @@ class ConformerRNNModel(pl.LightningModule):
         scores = scores.cpu()
   
         acc = accuracy_score(scores, md_predict)
-        f1_ = f1_score(scores, md_predict, pos_label=1)
-        precision_ = precision_score(scores, md_predict, pos_label=1)
-        recall_ = recall_score(scores, md_predict, pos_label=1)
+        f1_ = f1_score(scores, md_predict, pos_label=0)
+        precision_ = precision_score(scores, md_predict, pos_label=0)
+        recall_ = recall_score(scores, md_predict, pos_label=0)
  
         if batch_idx == 0:
             print("\nResult of", utt_ids[0])
@@ -190,9 +187,9 @@ class ConformerRNNModel(pl.LightningModule):
         scores = scores.cpu()
   
         acc = accuracy_score(scores, md_predict)
-        f1_ = f1_score(scores, md_predict, pos_label=1)
-        precision_ = precision_score(scores, md_predict, pos_label=1)
-        recall_ = recall_score(scores, md_predict, pos_label=1)
+        f1_ = f1_score(scores, md_predict, pos_label=0)
+        precision_ = precision_score(scores, md_predict, pos_label=0)
+        recall_ = recall_score(scores, md_predict, pos_label=0)
         
         if batch_idx == 0:
             self.df = pd.DataFrame(
@@ -201,11 +198,11 @@ class ConformerRNNModel(pl.LightningModule):
             )
             
         self.df.loc[len(self.df)] = [
-            utt_ids[0], 
+            utt_ids[0],
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            ' '.join(scores.cpu().tolist()),
-            ' '.join(md_outputs.max(-1)[1].cpu().tolist()),
+            ' '.join([str(s) for s in scores.cpu().tolist()]),
+            ' '.join([str(s) for s in md_outputs.max(-1)[1].cpu().tolist()]),
             per, acc, f1_, precision_, recall_
         ]
             

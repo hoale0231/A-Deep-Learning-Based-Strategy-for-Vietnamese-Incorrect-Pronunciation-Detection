@@ -48,6 +48,7 @@ class LightningGradDataModule(pl.LightningDataModule):
             f"{configs.dataset_path}/train.csv",
             f"{configs.dataset_path}/dev.csv",
             f"{configs.dataset_path}/test.csv",
+            f"{configs.dataset_path}/label.csv"
         ]
         self.dataset = dict()
         self.batch_size = configs.batch_size
@@ -61,6 +62,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.freq_mask_para = configs.freq_mask_para
         self.time_mask_num = configs.time_mask_num
         self.freq_mask_num = configs.freq_mask_num
+        self.auto_gen_score = configs.auto_gen_score
         self.logger = logging.getLogger(__name__)
 
         if configs.feature_extract_method == 'spectrogram':
@@ -82,18 +84,15 @@ class LightningGradDataModule(pl.LightningDataModule):
         """
         self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         self.phone_map = json.load(open(f"{self.dataset_path}/phone_map.json"))
-        self.word_vocab = WordVocabulary(f"{self.dataset_path}/word_token.txt")
-        return self.vocab, self.word_vocab
+        return self.vocab
 
     def setup(self, stage: Optional[str] = None) -> None:
         """ Split dataset into train, valid, and test. """
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
-        if not self.word_vocab:
-            self.word_vocab = WordVocabulary(f"{self.dataset_path}/word_token.txt")
         
-        splits = ['train', 'dev', 'test']
-        for path, split in zip(self.manifest_paths, splits):
+        splits = ['train', 'dev', 'test', 'valid']
+        for path, split, gen_score in zip(self.manifest_paths, splits, self.auto_gen_score):
             df = pd.read_csv(path)
             utt_id, audio_paths, transcripts, score = df.utt_id, df.path, df.text, df.score
             self.dataset[split] = self.audio_dataset(
@@ -103,9 +102,9 @@ class LightningGradDataModule(pl.LightningDataModule):
                 transcripts=transcripts,
                 score=score,
                 vocab=self.vocab,
-                word_vocab=self.word_vocab,
                 phoneme_map=self.phone_map,
                 apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
+                auto_gen_score=gen_score,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,
                 frame_length=self.frame_length,
@@ -132,9 +131,9 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
+        test_clean_sampler = BucketingSampler(self.dataset['valid'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test'],
+                dataset=self.dataset['valid'],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )
