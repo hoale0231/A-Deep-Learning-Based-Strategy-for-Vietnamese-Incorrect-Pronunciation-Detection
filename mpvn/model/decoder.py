@@ -67,6 +67,8 @@ class RNNDecoder(nn.Module):
         words = torch.zeros(len(word_list), max_len, output.shape[-1])
         if torch.cuda.is_available():
             words = words.cuda()
+        if output.requires_grad:
+            words.requires_grad_()
         for word_tensor, word in zip(words, word_list):
             word_tensor[:len(word)] = word
         return words

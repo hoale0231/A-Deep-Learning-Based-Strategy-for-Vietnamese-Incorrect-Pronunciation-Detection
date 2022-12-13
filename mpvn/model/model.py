@@ -156,8 +156,9 @@ class ConformerRNNModel(pl.LightningModule):
         if batch_idx == 0:
             print("\nResult of", utt_ids[0])
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
-            print("PR       :", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
-            print("Target   :", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
+            print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
+            print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
+            print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '-').replace(' ', ''))
             print("Per:", per)
             
             print("MED output   :", md_outputs.max(-1)[1])
@@ -193,14 +194,15 @@ class ConformerRNNModel(pl.LightningModule):
         
         if batch_idx == 0:
             self.df = pd.DataFrame(
-                columns= ['utt_id', 'phones', 'phones_predict', 'score', 
+                columns= ['utt_id', 'phones', 'phone_gen', 'phones_predict', 'score', 
                  'score_predict', 'per', 'accuracy', 'f1', 'precision', 'recall']
             )
             
         self.df.loc[len(self.df)] = [
             utt_ids[0],
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
+            self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '-').replace(' ', ''),
+            self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''),
             ' '.join([str(s) for s in scores.cpu().tolist()]),
             ' '.join([str(s) for s in md_outputs.max(-1)[1].cpu().tolist()]),
             per, acc, f1_, precision_, recall_

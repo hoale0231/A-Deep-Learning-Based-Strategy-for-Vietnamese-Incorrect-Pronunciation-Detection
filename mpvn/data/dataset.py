@@ -197,7 +197,7 @@ class AudioDataset(Dataset):
             new_phones = []
             for i, p in enumerate(phones):
                 p_ = p
-                if np.random.rand() > 0.5:
+                if np.random.rand() < 0.5:
                     if i == 0:
                         if p in self.init_consonants:
                             p_ = np.random.choice(tuple(set(self.init_consonants) - {p}))
@@ -215,7 +215,7 @@ class AudioDataset(Dataset):
             return '-'.join(new_phones)
         words = transcript.split()
         phonemes = [self.phone_map[word].replace(' ', '-') for word in words]     
-        replace = np.random.rand(len(phonemes)) < 0.2
+        replace = np.random.rand(len(phonemes)) < 0.6
         phonemes_replaced = [_random_replace(p) if r else p for p, r in zip(phonemes, replace)]
         score = [int(p == p_) for p, p_ in zip(phonemes, phonemes_replaced)]
         return [self.sos_id] + self.vocab.string_to_label(' '.join(phonemes_replaced)) + [self.eos_id], score
@@ -226,7 +226,7 @@ class AudioDataset(Dataset):
         return phns, gen_phns, score
     
     def _parse_score(self, score: str) -> list:
-        return [int(s == 2) for s in score.split()]
+        return [int(int(s) == 2) for s in score.split()]
 
     def __getitem__(self, idx):
         """
