@@ -15,6 +15,7 @@ class GradVocabulary(Vocabulary):
         self.vocab = ['_', ' ', '<s>', '<e>'] + self.vocab
         self.pad_id = 0
         self.blank_id = 0
+        self.space_id = 1
         self.sos_id = 2
         self.eos_id = 3
         self.vocab_size = len(self.vocab)

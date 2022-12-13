@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Optional, Tuple
 import random
-from mpvn.model.attention import MultiHeadAttention
+from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
 from mpvn.model.modules import View
 
 class RNNDecoder(nn.Module):
@@ -18,6 +18,7 @@ class RNNDecoder(nn.Module):
             num_classes: int,
             hidden_state_dim: int = 1024,
             eos_id: int = 2,
+            space_id: int = 1,
             num_heads: int = 4,
             num_layers: int = 2,
             rnn_type: str = 'lstm',
@@ -26,6 +27,7 @@ class RNNDecoder(nn.Module):
         super(RNNDecoder, self).__init__()
         self.hidden_state_dim = hidden_state_dim
         self.eos_id = eos_id
+        self.space_id = space_id
         self.embedding = nn.Embedding(num_classes, hidden_state_dim)
         self.input_dropout = nn.Dropout(dropout_p)
         self.rnn = self.supported_rnns[rnn_type.lower()](
@@ -44,6 +46,28 @@ class RNNDecoder(nn.Module):
             View(shape=(-1, self.hidden_state_dim), contiguous=True),
             nn.Linear(hidden_state_dim, num_classes),
         )
+        
+    def _split_output_to_word(self, input: Tensor, output: Tensor):
+        word_list = []
+        word = []
+        max_len = 0
+        for b in range(len(input)):
+            for i, o in zip(input[b], output[b]):
+                if i == self.space_id or i == self.eos_id:
+                    word_list.append(torch.stack(word))
+                    max_len = max(len(word), max_len)
+                    word = []
+                else:
+                    word.append(o)
+                if i == self.eos_id:
+                    break
+            if word:
+                word_list.append(torch.stack(word))
+        words = torch.zeros(len(word_list), max_len, output.shape[-1])
+        for word_tensor, word in zip(words, word_list):
+            word_tensor[:len(word)] = word
+        return words
+        
 
     def forward(
             self,
@@ -70,52 +94,65 @@ class RNNDecoder(nn.Module):
         # by concat cannonical phonemes and context vector,
         # but with shift and remove <sos>, <eos> items
         mispronunciation_phone_features = torch.cat((embedded[:,1:], context[:,:-1]), dim=2)
-        
+        mispronunciation_phone_features = self._split_output_to_word(input_rnn[:,1:], mispronunciation_phone_features)
         outputs = torch.cat((outputs, context), dim=2)
         outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-
+        
         return outputs, attn, mispronunciation_phone_features
 
 class WordDecoder(nn.Module):
+    supported_rnns = {
+        'lstm': nn.LSTM,
+        'gru': nn.GRU,
+        'rnn': nn.RNN,
+    }
     def __init__(
             self,
             num_classes: int,
             num_words: int,
             hidden_state_dim: int = 1024,
             num_heads: int = 4,
-            dropout_p: float = 0.3
+            num_layers: int = 1,
+            dropout_p: float = 0.3,
+            rnn_type: str = 'gru'
     ) -> None:
         super(WordDecoder, self).__init__()
         self.hidden_state_dim = hidden_state_dim
         self.embedding = nn.Embedding(num_words, hidden_state_dim)
         self.input_dropout = nn.Dropout(dropout_p)
-        self.attention = MultiHeadAttention(hidden_state_dim, num_heads=num_heads)
+        self.self_attention = MultiHeadedSelfAttentionModule(hidden_state_dim, num_heads=num_heads)
+        self.rnn = self.supported_rnns[rnn_type.lower()](
+            input_size=hidden_state_dim,
+            hidden_size=hidden_state_dim,
+            num_layers=num_layers,
+            bias=True,
+            batch_first=True,
+            dropout=dropout_p,
+            bidirectional=False,
+        )
         self.ff = nn.Linear(hidden_state_dim * 2, hidden_state_dim)
         self.fc = nn.Sequential(
-            nn.Linear(hidden_state_dim * 2, hidden_state_dim),
+            nn.Linear(hidden_state_dim, hidden_state_dim // 2),
             nn.Tanh(),
-            View(shape=(-1, self.hidden_state_dim), contiguous=True),
-            nn.Linear(hidden_state_dim, num_classes),
+            nn.Linear(hidden_state_dim // 2, num_classes),
         )
 
     def forward(
             self,
-            words: Optional[Tensor] = None,
-            encoder_outputs: Tensor = None
+            inputs: Tensor = None
     ) -> Tensor:
-        batch_size, output_lengths = words.size(0), words.size(1)
+        # batch_size, input_lengths = inputs.size(0), inputs.size(1)
 
-        embedded = self.embedding(words)
-        embedded = self.input_dropout(embedded)
-        encoder_outputs = self.ff(encoder_outputs)
+        # embedded = self.embedding(words)
+        # embedded = self.input_dropout(embedded)
+        inputs = self.ff(inputs)
 
-        context, attn = self.attention(embedded, encoder_outputs, encoder_outputs)
-        
-        outputs = torch.cat((embedded, context), dim=2)
-        outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
-        outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-        return outputs, attn
+        output = self.self_attention(inputs)
+        output, _ = self.rnn(output)
+        output = self.fc(output[:,-1,:]).log_softmax(dim=-1)             
+        # outputs = outputs.view(batch_size, input_lengths, -1).squeeze(1)
+        return output
 
 
 

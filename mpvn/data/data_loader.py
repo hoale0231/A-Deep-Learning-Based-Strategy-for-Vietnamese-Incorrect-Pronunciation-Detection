@@ -36,12 +36,12 @@ def _collate_fn(batch, pad_id: int = 0):
 
     max_inputs_sample = max(batch, key=lambda x: len(x[0]))[0]
     max_r_o_sample = max(batch, key=lambda x: len(x[1]))[1]
-    max_sent_sample = max(batch, key=lambda x: len(x[2]))[2]
-    max_r_c_sample = max(batch, key=lambda x: len(x[3]))[3]
+    max_r_c_sample = max(batch, key=lambda x: len(x[2]))[2]
+    # max_score_sample = max(batch, key=lambda x: len(x[3]))[3]
 
     max_input_length = max_inputs_sample.size(0)
     max_r_o_length = len(max_r_o_sample)
-    max_sent_length = len(max_sent_sample)
+    # max_score_length = len(max_score_sample)
     max_r_c_length = len(max_r_c_sample)
 
     feat_dim = max_inputs_sample.size(1)
@@ -55,31 +55,28 @@ def _collate_fn(batch, pad_id: int = 0):
     r_cs = torch.zeros(batch_size, max_r_c_length).to(torch.long)
     r_cs.fill_(pad_id)
     
-    sent_cs = torch.zeros(batch_size, max_sent_length).to(torch.long)
-    sent_cs.fill_(pad_id)
-    
-    scores = torch.zeros(batch_size, max_sent_length).to(torch.long)
-    scores.fill_(pad_id)
+    # scores = torch.zeros(batch_size, max_score_length).to(torch.long)
+    # scores.fill_(pad_id)
     
     utt_ids = list()
+    scores = []
 
     for x in range(batch_size):
         sample = batch[x]
-        input, r_o, sent_c, r_c, score, utt_id = sample
+        input, r_o, r_c, score, utt_id = sample
         seq_length = input.size(0)
-
+        scores += score
         inputs[x].narrow(0, 0, seq_length).copy_(input)
         r_os[x].narrow(0, 0, len(r_o)).copy_(torch.LongTensor(r_o))
-        sent_cs[x].narrow(0, 0, len(sent_c)).copy_(torch.LongTensor(sent_c))
         r_cs[x].narrow(0, 0, len(r_c)).copy_(torch.LongTensor(r_c))
-        scores[x].narrow(0, 0, len(score)).copy_(torch.LongTensor(score))
+        # scores[x].narrow(0, 0, len(score)).copy_(torch.LongTensor(score))
         utt_ids.append(utt_id)
  
-
+    scores = torch.LongTensor(scores)
     input_lengths = torch.IntTensor(input_lengths)
     r_os_lengths = torch.IntTensor(r_os_lengths)
 
-    return inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids
+    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids
 
 
 class AudioDataLoader(DataLoader):

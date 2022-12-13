@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 from typing import Dict, Union
 import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 from mpvn.configs import DictConfig
 from mpvn.metric import *
@@ -65,6 +66,7 @@ class ConformerRNNModel(pl.LightningModule):
             num_classes=num_classes,
             hidden_state_dim=configs.encoder_dim,
             eos_id=self.vocab.eos_id,
+            space_id=self.vocab.space_id,
             num_heads=configs.num_attention_heads,
             dropout_p=configs.decoder_dropout_p,
             num_layers=configs.num_decoder_layers,
@@ -72,7 +74,7 @@ class ConformerRNNModel(pl.LightningModule):
         )
         
         self.word_decoder = WordDecoder(
-            num_classes=3,
+            num_classes=2,
             num_words=num_words,
             hidden_state_dim=configs.encoder_dim,
             num_heads=configs.num_attention_heads,
@@ -107,11 +109,11 @@ class ConformerRNNModel(pl.LightningModule):
         if recall != None:
             self.log(f"{stage}_recall", recall)
           
-    def forward(self, inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores):        
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores):        
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         pr_outputs, attn_encoder_decoder, _ = self.decoder(r_os, encoder_outputs)
         _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
-        md_outputs, md_attn = self.word_decoder(sent_cs, mispronunciation_phone_features)
+        md_outputs = self.word_decoder(mispronunciation_phone_features)
 
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
         pr_outputs = pr_outputs[:, :max_target_length, :]
@@ -126,32 +128,33 @@ class ConformerRNNModel(pl.LightningModule):
             score=scores
         )
         
-        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn
+        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
         )
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
-        md_predict = (md_outputs.max(-1)[1] != 1) + 1
-        scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
-        acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
-        f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
-        precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
-        recall_ = recall(y=scores, y_hat=md_predict, length=scores_lenghts)
+        md_predict = md_outputs.max(-1)[1].cpu()
+        scores = scores.cpu()
+  
+        acc = accuracy_score(scores, md_predict)
+        f1_ = f1_score(scores, md_predict, pos_label=1)
+        precision_ = precision_score(scores, md_predict, pos_label=1)
+        recall_ = recall_score(scores, md_predict, pos_label=1)
  
         if batch_idx == 0:
             print("\nResult of", utt_ids[0])
@@ -169,31 +172,27 @@ class ConformerRNNModel(pl.LightningModule):
             print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
             plt.imshow(attn_encoder_decoder, interpolation='none')
             plt.show()
-                    
-            md_attn = torch.sum(md_attn, dim=0).detach().cpu()
-            print("Word-decoder Attention:", md_attn.shape)
-            plt.imshow(md_attn, interpolation='none')
-            plt.show()
 
         self._log_states('valid', loss=loss, per=per, acc=acc, f1=f1_, precision=precision_, recall=recall_)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores, utt_ids = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, md_attn = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, sent_cs, r_cs, scores
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
         )
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
-        md_predict = (md_outputs.max(-1)[1] != 1) + 1
-        scores_lenghts = torch.sum(scores!=self.vocab.pad_id, axis=1)
-        acc = accuracy(y=scores, y_hat=md_predict, length=scores_lenghts)
-        f1_ = f1(y=scores, y_hat=md_predict, length=scores_lenghts)
-        precision_ = precision(y=scores, y_hat=md_predict, length=scores_lenghts)
-        recall_ = recall(y=scores, y_hat=md_predict, length=scores_lenghts)
+        md_predict = md_outputs.max(-1)[1].cpu()
+        scores = scores.cpu()
+  
+        acc = accuracy_score(scores, md_predict)
+        f1_ = f1_score(scores, md_predict, pos_label=1)
+        precision_ = precision_score(scores, md_predict, pos_label=1)
+        recall_ = recall_score(scores, md_predict, pos_label=1)
         
         if batch_idx == 0:
             self.df = pd.DataFrame(

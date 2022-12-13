@@ -30,6 +30,7 @@ class Vocabulary(object):
         self.eos_id = None
         self.pad_id = None
         self.blank_id = None
+        self.space_id = None
         self.vocab_size = None
 
     def __len__(self):
