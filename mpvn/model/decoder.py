@@ -64,14 +64,14 @@ class RNNDecoder(nn.Module):
             if word:
                 max_len = max(len(word), max_len)
                 word_list.append(torch.stack(word))
-        words = torch.zeros(len(word_list), max_len, output.shape[-1])
-        if torch.cuda.is_available():
-            words = words.cuda()
-        if output.requires_grad:
-            words.requires_grad_()
-        for word_tensor, word in zip(words, word_list):
-            word_tensor[:len(word)] = word
-        return words
+
+        word_list_ = []
+        for word in word_list:
+            zero_pad = torch.zeros(max_len - word.shape[0], word.shape[1], requires_grad = True)
+            if torch.cuda.is_available():
+              zero_pad = zero_pad.cuda()
+            word_list_.append(torch.concat([word, zero_pad], dim=0))
+        return torch.stack(word_list_)
         
 
     def forward(
@@ -151,6 +151,3 @@ class WordDecoder(nn.Module):
         output, _ = self.rnn(output)
         output = self.fc(output[:,-1,:]).log_softmax(dim=-1)
         return output
-
-
-
