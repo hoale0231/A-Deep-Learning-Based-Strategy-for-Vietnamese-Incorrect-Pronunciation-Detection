@@ -26,11 +26,10 @@ from torch import Tensor
 
 
 class CrossEntropyLoss(nn.Module):
-    def __init__(self, ignore_index, reduction='mean') -> None:
+    def __init__(self, reduction='mean') -> None:
         super(CrossEntropyLoss, self).__init__()
         self.reduction = reduction.lower()
-        self.ignore_index = ignore_index
-        self.cross_entropy_loss = nn.CrossEntropyLoss(reduction=self.reduction, ignore_index=self.ignore_index)
+        self.cross_entropy_loss = nn.CrossEntropyLoss(reduction=self.reduction)
         
     def forward(
             self,
@@ -101,7 +100,7 @@ class JointLoss(nn.Module):
             cross_entropy_weight=cross_entropy_weight,
             ctc_weight=ctc_weight,
         )
-        self.md_loss = CrossEntropyLoss(ignore_index=ignore_index, reduction=reduction)
+        self.md_loss = CrossEntropyLoss(reduction=reduction)
         self.md_weight = md_weight
         self.pr_weight = pr_weight
 

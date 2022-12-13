@@ -163,8 +163,8 @@ class ConformerRNNModel(pl.LightningModule):
             print("Target   :", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
             print("Per:", per)
             
-            print("MED output   :", md_outputs.max(-1)[1][0])
-            print("Score        :", scores[0])
+            print("MED output   :", md_outputs.max(-1)[1])
+            print("Score        :", scores)
             
             print("Accuracy:", acc)
             
@@ -204,8 +204,8 @@ class ConformerRNNModel(pl.LightningModule):
             utt_ids[0], 
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            scores[0].cpu().tolist(),
-            md_outputs.max(-1)[1][0].cpu().tolist(),
+            ' '.join(scores.cpu().tolist()),
+            ' '.join(md_outputs.max(-1)[1].cpu().tolist()),
             per, acc, f1_, precision_, recall_
         ]
             

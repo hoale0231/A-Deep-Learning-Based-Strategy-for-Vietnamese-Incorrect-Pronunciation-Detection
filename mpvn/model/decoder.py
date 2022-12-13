@@ -49,9 +49,9 @@ class RNNDecoder(nn.Module):
         
     def _split_output_to_word(self, input: Tensor, output: Tensor):
         word_list = []
-        word = []
         max_len = 0
         for b in range(len(input)):
+            word = []
             for i, o in zip(input[b], output[b]):
                 if i == self.space_id or i == self.eos_id:
                     word_list.append(torch.stack(word))
@@ -62,8 +62,11 @@ class RNNDecoder(nn.Module):
                 if i == self.eos_id:
                     break
             if word:
+                max_len = max(len(word), max_len)
                 word_list.append(torch.stack(word))
         words = torch.zeros(len(word_list), max_len, output.shape[-1])
+        if torch.cuda.is_available():
+            words = words.cuda()
         for word_tensor, word in zip(words, word_list):
             word_tensor[:len(word)] = word
         return words
