@@ -48,7 +48,9 @@ class LightningGradDataModule(pl.LightningDataModule):
             f"{configs.dataset_path}/train.csv",
             f"{configs.dataset_path}/dev.csv",
             f"{configs.dataset_path}/test.csv",
-            f"{configs.dataset_path}/label.csv"
+            f"{configs.dataset_path}/label.csv",
+            f"{configs.dataset_path}/train_label.csv",
+            f"{configs.dataset_path}/test_label.csv",
         ]
         self.dataset = dict()
         self.batch_size = configs.batch_size
@@ -91,7 +93,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         
-        splits = ['train', 'dev', 'test', 'valid']
+        splits = ['train', 'dev', 'test', 'label', 'train_label', 'test_label']
         for path, split, gen_score in zip(self.manifest_paths, splits, self.auto_gen_score):
             df = pd.read_csv(path)
             utt_id, audio_paths, transcripts, score = df.utt_id, df.path, df.text, df.score
@@ -103,7 +105,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 score=score,
                 vocab=self.vocab,
                 phoneme_map=self.phone_map,
-                apply_spec_augment=self.apply_spec_augment if split == 'train' else False,
+                apply_spec_augment=self.apply_spec_augment if 'train' in split else False,
                 auto_gen_score=gen_score,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,
@@ -115,25 +117,25 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:
-        train_sampler = BucketingSampler(self.dataset['train'], batch_size=self.batch_size)
+        train_sampler = BucketingSampler(self.dataset['train_label'], batch_size=self.batch_size)
         return AudioDataLoader(
-            dataset=self.dataset['train'],
+            dataset=self.dataset['train_label'],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
+        val_clean_sampler = BucketingSampler(self.dataset['test_label'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test'],
+                dataset=self.dataset['test_label'],
                 num_workers=self.num_workers,
                 batch_sampler=val_clean_sampler,
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['valid'], batch_size=1)
+        test_clean_sampler = BucketingSampler(self.dataset['test_label'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['valid'],
+                dataset=self.dataset['test_label'],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )

@@ -9,7 +9,7 @@ class DictConfig:
 
     # SpecAugment
     apply_spec_augment: bool = True
-    auto_gen_score: bool = (True, True, True, False) # Train, dev, test, valid 
+    auto_gen_score: bool = (True, True, True, False, False, False) # Train, dev, test, label, train_label, test_label
     freq_mask_para: int = 27
     freq_mask_num: int = 2
     time_mask_num: int = 4
@@ -73,8 +73,8 @@ class DictConfig:
     teacher_forcing_ratio: float = 1.0
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
-    md_weight: float = 0.7
-    pr_weight: float = 0.3
+    md_weight: float = 0.8
+    pr_weight: float = 0.2
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
@@ -85,7 +85,7 @@ class DictConfig:
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
     num_workers: int = 4
-    batch_size: int = 16
+    batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     max_epochs: int = 30
