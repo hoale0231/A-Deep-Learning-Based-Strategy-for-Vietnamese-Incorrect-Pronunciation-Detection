@@ -122,7 +122,6 @@ class WordDecoder(nn.Module):
             rnn_type: str = 'gru'
     ) -> None:
         super(WordDecoder, self).__init__()
-        self.hidden_state_dim = hidden_state_dim
         self.input_dropout = nn.Dropout(dropout_p)
         self.self_attention = MultiHeadedSelfAttentionModule(hidden_state_dim, num_heads=num_heads)
         self.rnn = self.supported_rnns[rnn_type.lower()](
@@ -146,6 +145,7 @@ class WordDecoder(nn.Module):
             inputs: Tensor = None
     ) -> Tensor:
         inputs = self.ff(inputs)
+        inputs = self.input_dropout(inputs)
 
         output = self.self_attention(inputs)
         output, _ = self.rnn(output)
