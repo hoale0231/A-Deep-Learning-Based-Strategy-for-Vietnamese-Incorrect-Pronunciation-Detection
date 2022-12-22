@@ -78,9 +78,9 @@ class AudioDataset(Dataset):
         self.audio_paths = list(audio_paths)
         self.transcripts = list(transcripts)
         self.score = list(score)
+        self.auto_gen_score = list(auto_gen_score)
         self.phone_map = phoneme_map
         self.vocab = vocab
-        self.auto_gen_score = auto_gen_score
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
         self.sos_id = vocab.sos_id
@@ -102,6 +102,7 @@ class AudioDataset(Dataset):
                 self.audio_paths.append(self.audio_paths[idx])
                 self.transcripts.append(self.transcripts[idx])
                 self.score.append(self.score[idx])
+                self.auto_gen_score.append(self.auto_gen_score[idx])
 
         self.vowels = """   iə iə2 iəɜ iə4 iə5 iə6
                             iɛ iɛ1 iɛ2 iɛɜ iɛ4 iɛ5 iɛ6
@@ -240,7 +241,7 @@ class AudioDataset(Dataset):
         """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
         audio_feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
-        if self.auto_gen_score:
+        if self.auto_gen_score[idx]:
             r_o, r_c, score = self._process_transcripts(self.transcripts[idx])
         else:
             r_o = r_c = self._parse_phonemes(self.transcripts[idx])
@@ -250,9 +251,9 @@ class AudioDataset(Dataset):
         return audio_feature, r_o, r_c, score, self.utt_id[idx]
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)

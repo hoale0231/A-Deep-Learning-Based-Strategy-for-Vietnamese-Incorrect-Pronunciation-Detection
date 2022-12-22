@@ -137,6 +137,7 @@ class ConformerRNNModel(pl.LightningModule):
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        print(utt_ids, scores)
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
         )
