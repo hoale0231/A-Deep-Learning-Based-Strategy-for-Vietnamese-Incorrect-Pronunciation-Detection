@@ -24,8 +24,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from mpvn.model.activation import Swish
-from mpvn.model.modules import LayerNorm, Linear
+from mpvn.modules.activation import Swish
+from mpvn.modules.modules import LayerNorm, Linear
 
 
 class FeedForwardModule(nn.Module):

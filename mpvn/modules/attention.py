@@ -28,8 +28,8 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional, Tuple
 
-from mpvn.model.embedding import PositionalEncoding
-from mpvn.model.modules import Linear, LayerNorm
+from mpvn.modules.embedding import PositionalEncoding
+from mpvn.modules.modules import Linear, LayerNorm
 
 
 class ScaledDotProductAttention(nn.Module):

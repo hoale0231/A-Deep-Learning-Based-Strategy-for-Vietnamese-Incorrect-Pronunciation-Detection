@@ -25,8 +25,8 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Tuple
 
-from mpvn.model.activation import Swish, GLU
-from mpvn.model.modules import LayerNorm, Transpose
+from mpvn.modules.activation import Swish, GLU
+from mpvn.modules.modules import LayerNorm, Transpose
 
 
 class DepthwiseConv1d(nn.Module):

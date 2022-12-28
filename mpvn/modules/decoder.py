@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Optional, Tuple
-from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
-from mpvn.model.modules import View
+from mpvn.modules.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
+from mpvn.modules.modules import View
 
 class RNNDecoder(nn.Module):
     supported_rnns = {

@@ -4,10 +4,10 @@ import random
 from torch import Tensor
 from typing import Optional, Any, Tuple
 
-from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule, MultiHeadLocationAwareAttention
-from mpvn.model.embedding import Embedding, PositionalEncoding
-from mpvn.model.mask import get_attn_pad_mask, get_attn_subsequent_mask
-from mpvn.model.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View, LayerNorm
+from mpvn.modules.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule, MultiHeadLocationAwareAttention
+from mpvn.modules.embedding import Embedding, PositionalEncoding
+from mpvn.modules.mask import get_attn_pad_mask, get_attn_subsequent_mask
+from mpvn.modules.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View, LayerNorm
 
 class SpeechTransformerDecoderLayer(nn.Module):
     """

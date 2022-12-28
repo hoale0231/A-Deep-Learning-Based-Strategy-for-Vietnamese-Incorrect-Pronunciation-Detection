@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 
 from mpvn.configs import DictConfig
 from mpvn.metric import WordErrorRate
-from mpvn.model.decoder_pr import *
-from mpvn.model.decoder import RNNDecoder
-from mpvn.model.encoder import ConformerEncoder
+from mpvn.modules.decoder_pr import *
+from mpvn.modules.decoder import RNNDecoder
+from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion.criterion import JointCTCCrossEntropyLoss

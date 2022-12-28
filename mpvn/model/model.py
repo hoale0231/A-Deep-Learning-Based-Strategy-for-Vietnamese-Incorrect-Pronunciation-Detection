@@ -12,8 +12,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 from mpvn.configs import DictConfig
 from mpvn.metric import *
-from mpvn.model.decoder import RNNDecoder, WordDecoder
-from mpvn.model.encoder import ConformerEncoder
+from mpvn.modules.decoder import RNNDecoder, WordDecoder
+from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion.criterion import JointLoss

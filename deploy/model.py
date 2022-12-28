@@ -1,16 +1,12 @@
-from torch import Tensor
-
 import pytorch_lightning as pl
 
 from mpvn.configs import DictConfig
-from mpvn.model.decoder import RNNDecoder, WordDecoder
-from mpvn.model.encoder import ConformerEncoder
-from mpvn.vocabs import GradVocabulary
+from mpvn.modules.decoder import RNNDecoder, WordDecoder
+from mpvn.modules.encoder import ConformerEncoder
 from mpvn.vocabs.vocab import Vocabulary
 import librosa
 import numpy as np
 import torch
-import json
 
 class ConformerRNNModel(pl.LightningModule):
     def __init__(

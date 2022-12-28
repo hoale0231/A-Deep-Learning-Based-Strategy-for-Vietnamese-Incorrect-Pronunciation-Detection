@@ -24,13 +24,13 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Tuple
 
-from mpvn.model.feed_forward import FeedForwardModule
-from mpvn.model.attention import MultiHeadedSelfAttentionModule
-from mpvn.model.convolution import (
+from mpvn.modules.feed_forward import FeedForwardModule
+from mpvn.modules.attention import MultiHeadedSelfAttentionModule
+from mpvn.modules.convolution import (
     ConformerConvModule,
     Conv2dSubampling,
 )
-from mpvn.model.modules import (
+from mpvn.modules.modules import (
     ResidualConnectionModule,
     LayerNorm,
     Linear, Transpose,
