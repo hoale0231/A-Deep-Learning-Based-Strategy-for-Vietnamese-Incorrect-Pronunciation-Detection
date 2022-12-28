@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Tuple
@@ -213,7 +212,6 @@ class ConformerEncoder(nn.Module):
 
         outputs, output_lengths = self.conv_subsample(inputs, input_lengths)
         outputs = self.input_projection(outputs)
-
         for layer in self.layers:
             outputs = layer(outputs)
 

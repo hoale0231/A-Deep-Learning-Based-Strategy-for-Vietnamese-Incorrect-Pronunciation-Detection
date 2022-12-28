@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from typing import Optional, Tuple
-import random
 from mpvn.model.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule
 from mpvn.model.modules import View
 
