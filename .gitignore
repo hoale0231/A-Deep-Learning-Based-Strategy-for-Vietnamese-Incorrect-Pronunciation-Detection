@@ -152,3 +152,4 @@ tensorboard/
 data.tar.gz
 data_filter.tar.gz
 text2grapheme/
+meta_data/
