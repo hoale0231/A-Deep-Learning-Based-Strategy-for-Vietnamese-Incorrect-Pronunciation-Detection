@@ -117,15 +117,15 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:
-        train_sampler = BucketingSampler(self.dataset['train_label'], batch_size=self.batch_size)
+        train_sampler = BucketingSampler(self.dataset['train'], batch_size=self.batch_size)
         return AudioDataLoader(
-            dataset=self.dataset['train_label'],
+            dataset=self.dataset['train'],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['valid_label'], batch_size=1)
+        val_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
         return AudioDataLoader(
                 dataset=self.dataset['test'],
                 num_workers=self.num_workers,
@@ -133,9 +133,9 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['test_label'], batch_size=1)
+        test_clean_sampler = BucketingSampler(self.dataset['dev'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test_label'],
+                dataset=self.dataset['dev'],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )

@@ -23,6 +23,7 @@
 import os
 import random
 import librosa
+import soundfile as sf
 import torch
 import torchaudio
 import numpy as np
@@ -171,7 +172,11 @@ class AudioDataset(Dataset):
         Returns:
             feature (np.ndarray): feature extract by sub-class
         """
-        signal, sr = librosa.load(audio_path, sr=self.sample_rate)
+        signal, sr = sf.read(audio_path)
+        if sr != 16000:
+            print(audio_path, file=open('file_invalid_sample_rate.txt', 'a'))
+            signal = librosa.resample(signal, orig_sr=sr, target_sr=16000)
+    
         feature = self._get_feature(signal)
 
         feature -= feature.mean()

@@ -72,8 +72,8 @@ class DictConfig:
     teacher_forcing_ratio: float = 1.0
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
-    md_weight: float = 0.8
-    pr_weight: float = 0.2
+    md_weight: float = 0
+    pr_weight: float = 1
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
@@ -83,7 +83,7 @@ class DictConfig:
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 4
+    num_workers: int = 1
     batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
