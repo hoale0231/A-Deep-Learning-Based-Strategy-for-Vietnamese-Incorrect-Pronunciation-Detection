@@ -146,9 +146,11 @@ dmypy.json
 Data
 test.py
 Checkpoint/
+checkpoint/
 test.result
 log.log
 tensorboard/
 data.tar.gz
 data_filter.tar.gz
 text2grapheme/
+meta_data/
