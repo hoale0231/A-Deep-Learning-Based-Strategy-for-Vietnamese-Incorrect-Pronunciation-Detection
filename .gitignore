@@ -145,8 +145,7 @@ dmypy.json
 
 Data
 test.py
-Checkpoint/
-checkpoint/
+*.ckpt
 test.result
 log.log
 tensorboard/

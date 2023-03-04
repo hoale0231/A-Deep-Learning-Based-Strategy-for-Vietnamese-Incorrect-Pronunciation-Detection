@@ -114,7 +114,7 @@ class ConformerRNNModel(pl.LightningModule):
         pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, train_md)
         
         # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
-        if train_md and r_cs != r_os:
+        if train_md and torch.any(r_cs != r_os):
             _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
         
         # Forward word decoder

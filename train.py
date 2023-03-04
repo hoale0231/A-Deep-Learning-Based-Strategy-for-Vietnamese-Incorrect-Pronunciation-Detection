@@ -40,12 +40,27 @@ trainer = pl.Trainer(accelerator=configs.accelerator,
                       max_epochs=configs.max_epochs,
                       callbacks=[checkpoint_callback, early_stop_callback])
 
-model = ConformerRNNModel.load_from_checkpoint(
-    '/home/hoa/mispronunciation-detection-for-vietnamese/checkpoint/mpvn-epoch=15-valid_loss=0.32-valid_per=0.09-valid_acc=0.00-valid_f1=0.00.ckpt',
-    configs=configs,
-    num_classes=len(vocab),
-    vocab=vocab,
-    per_metric=WordErrorRate(vocab)
-)
+# from glob import glob
 
+# for cp in glob('checkpoint-pr/*'):
+#     model = ConformerRNNModel.load_from_checkpoint(
+#         cp,
+#         configs=configs,
+#         num_classes=len(vocab),
+#         vocab=vocab,
+#         per_metric=WordErrorRate(vocab)
+#     )
+
+#     # trainer.fit(model, data_module)
+#     print(cp)
+#     trainer.validate(model, data_module)
+
+
+model = ConformerRNNModel.load_from_checkpoint(
+        '/home/hoa/mispronunciation-detection-for-vietnamese/checkpoint-pr/mpvn-epoch=04-valid_loss=0.30-valid_per=0.08-valid_acc=0.00-valid_f1=0.00.ckpt',
+        configs=configs,
+        num_classes=len(vocab),
+        vocab=vocab,
+        per_metric=WordErrorRate(vocab)
+    )
 trainer.fit(model, data_module)
