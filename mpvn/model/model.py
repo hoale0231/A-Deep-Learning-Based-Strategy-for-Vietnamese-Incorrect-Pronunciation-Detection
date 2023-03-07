@@ -30,8 +30,6 @@ class ConformerRNNModel(pl.LightningModule):
     ) -> None:
         super(ConformerRNNModel, self).__init__()
         self.configs = configs
-        self.gradient_clip_val = configs.gradient_clip_val
-        self.teacher_forcing_ratio = configs.teacher_forcing_ratio
         self.vocab = vocab
         self.per_metric = per_metric
         self.criterion = self.configure_criterion(
@@ -107,24 +105,34 @@ class ConformerRNNModel(pl.LightningModule):
         if recall != None:
             self.log(f"{stage}_recall", recall)
           
-    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores):        
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores): 
+        # Forward encoder   
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        pr_outputs, attn_encoder_decoder, _ = self.decoder(r_os, encoder_outputs)
-        _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
-        md_outputs = self.word_decoder(mispronunciation_phone_features)
+        
+        # Forward phone decoder
+        train_md = self.configs.md_weight > 0
+        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, train_md)
+        
+        # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
+        if train_md and torch.any(r_cs != r_os):
+            _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
+        
+        # Forward word decoder
+        md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
+        
+        # Calc loss
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
         pr_outputs = pr_outputs[:, :max_target_length, :]
-        
         loss, pr_loss, md_loss = self.criterion(
             encoder_log_probs=encoder_log_probs.transpose(0, 1),
             pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
             encoder_output_lengths=encoder_output_lengths,
             r_os=r_os[:, 1:],
             r_os_lengths=r_os_lengths,
-            md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)),
+            md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
             score=scores
         )
-        
+
         return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
@@ -145,14 +153,17 @@ class ConformerRNNModel(pl.LightningModule):
         y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
-        md_predict = md_outputs.max(-1)[1].cpu()
-        scores = scores.cpu()
+        if self.configs.md_weight > 0:
+            scores = scores.cpu()
+            md_predict = md_outputs.max(-1)[1].cpu()
   
-        acc = accuracy_score(scores, md_predict)
-        f1_ = f1_score(scores, md_predict, pos_label=0)
-        precision_ = precision_score(scores, md_predict, pos_label=0)
-        recall_ = recall_score(scores, md_predict, pos_label=0)
- 
+            acc = accuracy_score(scores, md_predict)
+            f1_ = f1_score(scores, md_predict, pos_label=0)
+            precision_ = precision_score(scores, md_predict, pos_label=0)
+            recall_ = recall_score(scores, md_predict, pos_label=0)
+        else:
+            scores = md_predict = acc = f1_ = precision_ = recall_ = None
+            
         if batch_idx == 0:
             print("\nResult of", utt_ids[0])
             print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
@@ -161,11 +172,11 @@ class ConformerRNNModel(pl.LightningModule):
             print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '-').replace(' ', ''))
             print("Per:", per)
             
-            print("MED output   :", md_outputs.max(-1)[1])
-            print("Score        :", scores)
-            
-            print("Accuracy:", acc)
-            
+            if self.configs.md_weight > 0:
+                print("MED output   :", md_predict)
+                print("Score        :", scores)
+                print("Accuracy:", acc)
+                
             attn_encoder_decoder = torch.sum(attn_encoder_decoder, dim=0).detach().cpu()
             print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
             plt.imshow(attn_encoder_decoder, interpolation='none')

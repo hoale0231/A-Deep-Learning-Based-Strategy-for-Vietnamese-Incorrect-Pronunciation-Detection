@@ -1,9 +1,0 @@
-astropy
-hydra-core
-numpy
-pandas
-python-Levenshtein
-pytorch-lightning
-sentencepiece
-torch>=1.4.0
-wget

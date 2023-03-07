@@ -25,23 +25,17 @@ import numpy as np
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import Sampler
 
-
 def _collate_fn(batch, pad_id: int = 0):
     """ functions that pad to the maximum sequence length """
-    # sort by sequence length for rnn.pack_padded_sequence()
-    batch = sorted(batch, key=lambda sample: sample[0].size(0), reverse=True)
-
     input_lengths = [len(s[0]) for s in batch]
     r_os_lengths = [len(s[1]) - 1 for s in batch]
 
     max_inputs_sample = max(batch, key=lambda x: len(x[0]))[0]
     max_r_o_sample = max(batch, key=lambda x: len(x[1]))[1]
     max_r_c_sample = max(batch, key=lambda x: len(x[2]))[2]
-    # max_score_sample = max(batch, key=lambda x: len(x[3]))[3]
 
     max_input_length = max_inputs_sample.size(0)
     max_r_o_length = len(max_r_o_sample)
-    # max_score_length = len(max_score_sample)
     max_r_c_length = len(max_r_c_sample)
 
     feat_dim = max_inputs_sample.size(1)
@@ -54,9 +48,6 @@ def _collate_fn(batch, pad_id: int = 0):
     
     r_cs = torch.zeros(batch_size, max_r_c_length).to(torch.long)
     r_cs.fill_(pad_id)
-    
-    # scores = torch.zeros(batch_size, max_score_length).to(torch.long)
-    # scores.fill_(pad_id)
     
     utt_ids = list()
     scores = []
