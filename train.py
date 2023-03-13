@@ -1,20 +1,23 @@
 import warnings
+from typing import List
+from pathlib import Path
+from glob import glob
+
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
-from mpvn.metric import WordErrorRate, CharacterErrorRate
+from mpvn.metric import WordErrorRate
 from mpvn.model.model import *
-
 from mpvn.configs import DictConfig
 
 checkpoint_callback = ModelCheckpoint(
     save_top_k=3,
     monitor="valid_loss",
     mode="min",
-    dirpath="checkpoint",
+    dirpath="checkpoint/checkpoint_stage_2",
     filename="mpvn-{epoch:02d}-{valid_loss:.2f}-{valid_per:.2f}-{valid_acc:.2f}-{valid_f1:.2f}",
 )
 early_stop_callback = EarlyStopping(
@@ -24,7 +27,7 @@ early_stop_callback = EarlyStopping(
     verbose=False, 
     mode="min"
 )
-logger = TensorBoardLogger("tensorboard", name="Pronunciation for Vietnamese")
+logger = TensorBoardLogger("tensorboard_2", name="Pronunciation for Vietnamese")
 
 configs = DictConfig()
 
@@ -40,27 +43,72 @@ trainer = pl.Trainer(accelerator=configs.accelerator,
                       max_epochs=configs.max_epochs,
                       callbacks=[checkpoint_callback, early_stop_callback])
 
-# from glob import glob
+def validate():
+    for cp in glob('checkpoint/checkpoint_stage_1/*'):
+        model = ConformerRNNModel.load_from_checkpoint(
+            cp,
+            configs=configs,
+            num_classes=len(vocab),
+            vocab=vocab,
+            per_metric=WordErrorRate(vocab)
+        )
 
-# for cp in glob('checkpoint-pr/*'):
-#     model = ConformerRNNModel.load_from_checkpoint(
-#         cp,
-#         configs=configs,
-#         num_classes=len(vocab),
-#         vocab=vocab,
-#         per_metric=WordErrorRate(vocab)
-#     )
+        print(cp)
+        trainer.validate(model, data_module)
 
-#     # trainer.fit(model, data_module)
-#     print(cp)
-#     trainer.validate(model, data_module)
+def train():
+    # checkpoint = 'checkpoint/checkpoint/mpvn-epoch=22-valid_loss=0.28-valid_per=0.07-valid_acc=0.00-valid_f1=0.00.ckpt'
+    # model = ConformerRNNModel.load_from_checkpoint(
+    #         checkpoint,
+    #         configs=configs,
+    #         num_classes=len(vocab),
+    #         vocab=vocab,
+    #         per_metric=WordErrorRate(vocab)
+    #     )
+    model = average_checkpoints(glob('checkpoint/checkpoint_stage_1/*'))
+    trainer.fit(model, data_module)
+    
 
+def average_checkpoints(filenames: List[Path], device: torch.device = torch.device("cpu")) -> dict:
+    n = len(filenames)
 
-model = ConformerRNNModel.load_from_checkpoint(
-        '/home/hoa/mispronunciation-detection-for-vietnamese/checkpoint-pr/mpvn-epoch=04-valid_loss=0.30-valid_per=0.08-valid_acc=0.00-valid_f1=0.00.ckpt',
+    avg = torch.load(filenames[0], map_location=device)['state_dict']
+
+    # Identify shared parameters. Two parameters are said to be shared
+    # if they have the same data_ptr
+    uniqued: Dict[int, str] = dict()
+
+    for k, v in avg.items():
+        v_data_ptr = v.data_ptr()
+        if v_data_ptr in uniqued:
+            continue
+        uniqued[v_data_ptr] = k
+
+    uniqued_names = list(uniqued.values())
+
+    for i in range(1, n):
+        state_dict = torch.load(filenames[i], map_location=device)['state_dict']
+        for k in uniqued_names:
+            avg[k] += state_dict[k]
+
+    for k in uniqued_names:
+        if avg[k].is_floating_point():
+            avg[k] /= n
+        else:
+            avg[k] //= n
+            
+    model = ConformerRNNModel(
         configs=configs,
         num_classes=len(vocab),
         vocab=vocab,
         per_metric=WordErrorRate(vocab)
     )
-trainer.fit(model, data_module)
+    model.load_state_dict(avg)
+    
+    return model
+
+def val_avg():
+    model = average_checkpoints(glob('checkpoint/checkpoint/*'))
+    trainer.validate(model, data_module)
+
+train()
