@@ -50,15 +50,15 @@ class DictConfig:
     peak_lr: float = 1e-04
     final_lr: float = 1e-07
     final_lr_scale: float = 0.05
-    warmup_steps: int = 16000
+    warmup_steps: int = 10000
     decay_steps: int = 150000
     scheduler: str = "transformer"
 
     # Conformer-Transformer
-    num_encoder_layers: int = 6 
-    encoder_dim: int = 256
+    encoder_dim: int = 144
+    num_encoder_layers: int = 4
     num_decoder_layers: int = 1
-    num_attention_heads: int = 8
+    num_attention_heads: int = 4
     feed_forward_expansion_factor: int = 4
     conv_expansion_factor: int = 2
     input_dropout_p: float = 0.1
@@ -66,14 +66,14 @@ class DictConfig:
     attention_dropout_p: float = 0.1
     conv_dropout_p: float = 0.1
     decoder_dropout_p: float = 0.1
-    conv_kernel_size: int = 33
+    conv_kernel_size: int = 31
     half_step_residual: bool = True
     max_length: int = 128
     teacher_forcing_ratio: float = 1.0
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
-    md_weight: float = 0.7
-    pr_weight: float = 0.3
+    md_weight: float = 0.8
+    pr_weight: float = 0.2
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
@@ -83,11 +83,11 @@ class DictConfig:
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 4
+    num_workers: int = 1
     batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
-    max_epochs: int = 50
+    max_epochs: int = 30
     # auto_scale_batch_size: str = "binsearch"
 
     # TrainerGPU

@@ -48,10 +48,9 @@ class LightningGradDataModule(pl.LightningDataModule):
             f"{configs.dataset_path}/train.csv",
             f"{configs.dataset_path}/dev.csv",
             f"{configs.dataset_path}/test.csv",
-            f"{configs.dataset_path}/label.csv",
-            f"{configs.dataset_path}/train_label.csv",
-            f"{configs.dataset_path}/test_label.csv",
-            f"{configs.dataset_path}/valid_label.csv",
+            f"{configs.dataset_path}/label_train.csv",
+            f"{configs.dataset_path}/label_test.csv",
+            f"{configs.dataset_path}/label_valid.csv",
         ]
         self.dataset = dict()
         self.batch_size = configs.batch_size
@@ -93,7 +92,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         
-        splits = ['train', 'dev', 'test', 'label', 'train_label', 'test_label', 'valid_label']
+        splits = ['train', 'dev', 'test', 'label_train', 'label_test', 'label_valid']
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path)
             utt_id, audio_paths, transcripts, score, gen_score = df.utt_id, df.path, df.text, df.score, df.gen_score
@@ -117,17 +116,17 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:
-        train_sampler = BucketingSampler(self.dataset['train'], batch_size=self.batch_size)
+        train_sampler = BucketingSampler(self.dataset['label_train'], batch_size=self.batch_size)
         return AudioDataLoader(
-            dataset=self.dataset['train'],
+            dataset=self.dataset['label_train'],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['test'], batch_size=1)
+        val_clean_sampler = BucketingSampler(self.dataset['label_valid'], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test'],
+                dataset=self.dataset['label_valid'],
                 num_workers=self.num_workers,
                 batch_sampler=val_clean_sampler,
             )

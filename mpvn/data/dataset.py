@@ -232,7 +232,7 @@ class AudioDataset(Dataset):
         return phns, gen_phns, score
     
     def _parse_score(self, score: str) -> list:
-        return [int(int(s) == 2) for s in score.split()]
+        return [int(s) for s in score.split()]
 
     def __getitem__(self, idx):
         """
