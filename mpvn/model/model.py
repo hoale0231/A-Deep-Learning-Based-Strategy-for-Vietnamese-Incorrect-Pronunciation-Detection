@@ -38,7 +38,8 @@ class ConformerRNNModel(pl.LightningModule):
             ctc_weight=configs.ctc_weight,
             cross_entropy_weight=configs.cross_entropy_weight,
             md_weight=configs.md_weight,
-            pr_weight=configs.pr_weight
+            pr_weight=configs.pr_weight,
+            gamma=configs.gamma
         )
 
         self.encoder = ConformerEncoder(
@@ -192,7 +193,6 @@ class ConformerRNNModel(pl.LightningModule):
         )
         
         y_hats = pr_outputs.max(-1)[1]
-        y_hats_encoder = encoder_log_probs.max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
         md_predict = md_outputs.max(-1)[1].cpu()
@@ -282,7 +282,8 @@ class ConformerRNNModel(pl.LightningModule):
             cross_entropy_weight: float = 0.7,
             blank_id: int = None,
             md_weight: float = 0.7,
-            pr_weight: float = 0.3
+            pr_weight: float = 0.3,
+            gamma: float = 1.0
     ) -> nn.Module:
         """ Configure criterion """
         return JointLoss(
@@ -292,5 +293,6 @@ class ConformerRNNModel(pl.LightningModule):
             cross_entropy_weight=cross_entropy_weight,
             ctc_weight=ctc_weight,
             md_weight=md_weight,
-            pr_weight=pr_weight
+            pr_weight=pr_weight,
+            gamma=gamma
         )

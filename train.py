@@ -1,114 +1,137 @@
 import warnings
-from typing import List
-from pathlib import Path
 from glob import glob
+import argparse
+import os
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
+from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
 from mpvn.model.model import *
 from mpvn.configs import DictConfig
 
-checkpoint_callback = ModelCheckpoint(
-    save_top_k=3,
-    monitor="valid_loss",
-    mode="min",
-    dirpath="checkpoint/checkpoint_stage_2",
-    filename="mpvn-{epoch:02d}-{valid_loss:.2f}-{valid_per:.2f}-{valid_acc:.2f}-{valid_f1:.2f}",
-)
-early_stop_callback = EarlyStopping(
-    monitor="valid_loss", 
-    min_delta=0.00, 
-    patience=5, 
-    verbose=False, 
-    mode="min"
-)
-logger = TensorBoardLogger("tensorboard_2", name="Pronunciation for Vietnamese")
+def get_parser():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        '--action',
+        choices=['train', 'val', 'test'],
+        required=True
+    )
+    parser.add_argument(
+        '--checkpoint',
+        type=str,
+        default=None,
+        help='path to checkpoint or checkpoint dir (in case of avg)'
+    )
+    parser.add_argument(
+        '--savedir',
+        type=str,
+        default='checkpoint/checkpoint/',
+        help='dir to save checkpoint'
+    )
+    parser.add_argument(
+        '--logdir',
+        type=str,
+        default='tensorboard',
+        help='dir to write log'
+    )
+    parser.add_argument(
+        '--gpu',
+        type=int,
+        default=1,
+        help='gpu index to use'
+    )
+    return parser
 
-configs = DictConfig()
+if __name__ == '__main__':
+    parser = get_parser()
+    args = parser.parse_args()
+    
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=3,
+        monitor="valid_loss",
+        mode="min",
+        dirpath=args.savedir,
+        filename="mpvn-{epoch:02d}-{valid_loss:.2f}-{valid_per:.2f}-{valid_acc:.2f}-{valid_f1:.2f}",
+    )
+    
+    early_stop_callback = EarlyStopping(
+        monitor="valid_loss", 
+        min_delta=0.00, 
+        patience=5, 
+        verbose=False, 
+        mode="min"
+    )
+    
+    logger = TensorBoardLogger(args.logdir, name="Pronunciation for Vietnamese")
+    configs = DictConfig()
 
-pl.seed_everything(configs.seed)
-warnings.filterwarnings('ignore')
+    pl.seed_everything(configs.seed)
+    warnings.filterwarnings('ignore')
 
-data_module = LightningGradDataModule(configs)
-vocab = data_module.get_vocab() 
+    data_module = LightningGradDataModule(configs)
+    vocab = data_module.get_vocab() 
 
-trainer = pl.Trainer(accelerator=configs.accelerator,
-                     devices=[0],
-                      logger=logger,
-                      max_epochs=configs.max_epochs,
-                      callbacks=[checkpoint_callback, early_stop_callback])
+    trainer = pl.Trainer(accelerator=configs.accelerator,
+                        devices=[args.gpu],
+                        logger=logger,
+                        max_epochs=configs.max_epochs,
+                        callbacks=[checkpoint_callback, early_stop_callback])
+    
+    if args.checkpoint != None:
+        if os.path.isdir(args.checkpoint):
+            print('Checkpoint path is a directory, do avg checkpoint')
+            model = ConformerRNNModel(
+                configs=configs,
+                num_classes=len(vocab),
+                vocab=vocab,
+                per_metric=WordErrorRate(vocab)
+            )
+            model = average_checkpoints(model, glob(args.checkpoint+'/*'))
+        elif os.path.isfile(args.checkpoint):
+            print('Checkpoint path is a file, dont avg checkpoint')
 
-def validate():
-    for cp in glob('checkpoint/checkpoint_stage_1/*'):
-        model = ConformerRNNModel.load_from_checkpoint(
-            cp,
+            model = ConformerRNNModel.load_from_checkpoint(
+                args.checkpoint,
+                configs=configs,
+                num_classes=len(vocab),
+                vocab=vocab,
+                per_metric=WordErrorRate(vocab)
+            )
+        else:
+            raise Exception('Checkpoint path is not file or directory!')
+    else:
+        model = ConformerRNNModel(
             configs=configs,
             num_classes=len(vocab),
             vocab=vocab,
             per_metric=WordErrorRate(vocab)
-        )
-
-        print(cp)
-        trainer.validate(model, data_module)
-
-def train():
-    # checkpoint = 'checkpoint/checkpoint/mpvn-epoch=22-valid_loss=0.28-valid_per=0.07-valid_acc=0.00-valid_f1=0.00.ckpt'
-    # model = ConformerRNNModel.load_from_checkpoint(
-    #         checkpoint,
-    #         configs=configs,
-    #         num_classes=len(vocab),
-    #         vocab=vocab,
-    #         per_metric=WordErrorRate(vocab)
-    #     )
-    model = average_checkpoints(glob('checkpoint/checkpoint_stage_1/*'))
-    trainer.fit(model, data_module)
-    
-
-def average_checkpoints(filenames: List[Path], device: torch.device = torch.device("cpu")) -> dict:
-    n = len(filenames)
-
-    avg = torch.load(filenames[0], map_location=device)['state_dict']
-
-    # Identify shared parameters. Two parameters are said to be shared
-    # if they have the same data_ptr
-    uniqued: Dict[int, str] = dict()
-
-    for k, v in avg.items():
-        v_data_ptr = v.data_ptr()
-        if v_data_ptr in uniqued:
-            continue
-        uniqued[v_data_ptr] = k
-
-    uniqued_names = list(uniqued.values())
-
-    for i in range(1, n):
-        state_dict = torch.load(filenames[i], map_location=device)['state_dict']
-        for k in uniqued_names:
-            avg[k] += state_dict[k]
-
-    for k in uniqued_names:
-        if avg[k].is_floating_point():
-            avg[k] /= n
-        else:
-            avg[k] //= n
-            
-    model = ConformerRNNModel(
-        configs=configs,
-        num_classes=len(vocab),
-        vocab=vocab,
-        per_metric=WordErrorRate(vocab)
     )
-    model.load_state_dict(avg)
+
+    if args.action == 'train':
+        trainer.fit(model, data_module)
+        
+    elif args.action == 'val':
+        trainer.validate(model, data_module)
     
-    return model
-
-def val_avg():
-    model = average_checkpoints(glob('checkpoint/checkpoint/*'))
-    trainer.validate(model, data_module)
-
-train()
+    elif args.action == 'test':
+        trainer.test(model, data_module)
+        score = ' '.join(list(model.df.score))
+        predict = ' '.join(list(model.df.score_predict))
+        score = [int(i) for i in score.split()]
+        predict = [int(i) for i in predict.split()]
+        
+        print("Accuracy:", accuracy_score(score, predict) * 100)
+        print("F1:", f1_score(score, predict, pos_label=0) * 100)
+        print("Recall:", recall_score(score, predict, pos_label=0) * 100)
+        print("Precision:", precision_score(score, predict, pos_label=0) * 100)
+        
+        model.df.to_csv('test_result.csv', index=False)
+        
+    

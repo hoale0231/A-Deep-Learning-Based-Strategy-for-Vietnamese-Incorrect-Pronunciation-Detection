@@ -64,6 +64,9 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.freq_mask_para = configs.freq_mask_para
         self.time_mask_num = configs.time_mask_num
         self.freq_mask_num = configs.freq_mask_num
+        self.train_set = configs.train_set
+        self.test_set = configs.test_set
+        self.valid_set = configs.valid_set
         self.logger = logging.getLogger(__name__)
 
         if configs.feature_extract_method == 'spectrogram':
@@ -116,25 +119,25 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:
-        train_sampler = BucketingSampler(self.dataset['label_train'], batch_size=self.batch_size)
+        train_sampler = BucketingSampler(self.dataset[self.train_set], batch_size=self.batch_size)
         return AudioDataLoader(
-            dataset=self.dataset['label_train'],
+            dataset=self.dataset[self.train_set],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['label_valid'], batch_size=1)
+        val_clean_sampler = BucketingSampler(self.dataset[self.valid_set], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['label_valid'],
+                dataset=self.dataset[self.valid_set],
                 num_workers=self.num_workers,
                 batch_sampler=val_clean_sampler,
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['dev'], batch_size=1)
+        test_clean_sampler = BucketingSampler(self.dataset[self.test_set], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['dev'],
+                dataset=self.dataset[self.test_set],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )

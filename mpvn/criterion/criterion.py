@@ -20,7 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Tuple
 from torch import Tensor
 
@@ -38,6 +40,25 @@ class CrossEntropyLoss(nn.Module):
     ) -> Tensor:
         cross_entropy_loss = self.cross_entropy_loss(decoder_log_probs, targets.contiguous().view(-1))
         return cross_entropy_loss
+    
+
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = (1 - pt) ** self.gamma * ce_loss
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 
 class JointCTCCrossEntropyLoss(nn.Module):
     """
@@ -90,7 +111,8 @@ class JointLoss(nn.Module):
             ctc_weight: float = 0.3,
             cross_entropy_weight: float = 0.7,
             md_weight: float = 0.7,
-            pr_weight: float = 0.3
+            pr_weight: float = 0.3,
+            gamma: float = 1.0
     ) -> None:
         super(JointLoss, self).__init__()
         self.pr_loss = JointCTCCrossEntropyLoss(
@@ -100,7 +122,8 @@ class JointLoss(nn.Module):
             cross_entropy_weight=cross_entropy_weight,
             ctc_weight=ctc_weight,
         )
-        self.md_loss = CrossEntropyLoss(reduction=reduction)
+        self.md_loss = FocalLoss(reduction=reduction, gamma=gamma)
+        # self.md_loss = CrossEntropyLoss(reduction=reduction)
         self.md_weight = md_weight
         self.pr_weight = pr_weight
 

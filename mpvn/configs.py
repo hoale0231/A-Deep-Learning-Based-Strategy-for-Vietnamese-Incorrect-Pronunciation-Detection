@@ -70,10 +70,13 @@ class DictConfig:
     half_step_residual: bool = True
     max_length: int = 128
     teacher_forcing_ratio: float = 1.0
+    
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
     md_weight: float = 0.7
     pr_weight: float = 0.3
+    gamma: float = 1.5    
+    
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
@@ -89,6 +92,9 @@ class DictConfig:
     gradient_clip_val: float = 5.0
     max_epochs: int = 50
     # auto_scale_batch_size: str = "binsearch"
+    train_set = 'train'
+    test_set = 'test'
+    valid_set = 'dev'
 
     # TrainerGPU
     use_cuda: bool = True
