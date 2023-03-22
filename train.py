@@ -81,6 +81,7 @@ if __name__ == '__main__':
     trainer = pl.Trainer(accelerator=configs.accelerator,
                         devices=[args.gpu],
                         logger=logger,
+                        # val_check_interval=0.25,
                         max_epochs=configs.max_epochs,
                         callbacks=[checkpoint_callback, early_stop_callback])
     
@@ -126,11 +127,11 @@ if __name__ == '__main__':
         predict = ' '.join(list(model.df.score_predict))
         score = [int(i) for i in score.split()]
         predict = [int(i) for i in predict.split()]
-        
+        print(args.checkpoint)
         print("Accuracy:", accuracy_score(score, predict) * 100)
         print("F1:", f1_score(score, predict, pos_label=0) * 100)
-        print("Recall:", recall_score(score, predict, pos_label=0) * 100)
         print("Precision:", precision_score(score, predict, pos_label=0) * 100)
+        print("Recall:", recall_score(score, predict, pos_label=0) * 100)
         
         model.df.to_csv('test_result.csv', index=False)
         
