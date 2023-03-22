@@ -152,3 +152,4 @@ tensorboard*/
 *.tar.gz
 text2grapheme/
 meta_data/
+checkpoint/

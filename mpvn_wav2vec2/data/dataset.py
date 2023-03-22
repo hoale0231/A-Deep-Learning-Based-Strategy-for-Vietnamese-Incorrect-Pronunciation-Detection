@@ -42,7 +42,6 @@ class AudioDataset(Dataset):
         dataset_path (str): path of librispeech dataset
         audio_paths (list): list of audio path
         transcripts (list): list of transript
-        apply_spec_augment (bool): flag indication whether to apply spec augment or not
         sos_id (int): identification of <sos>
         eos_id (int): identification of <eos>
         sample_rate (int): sampling rate of audio
@@ -64,7 +63,6 @@ class AudioDataset(Dataset):
             vocab: Vocabulary,
             phoneme_map: dict,
             auto_gen_score: bool = True,
-            apply_spec_augment: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
             frame_length: float = 25.0,
@@ -82,7 +80,6 @@ class AudioDataset(Dataset):
         self.auto_gen_score = list(auto_gen_score)
         self.phone_map = phoneme_map
         self.vocab = vocab
-        self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
         self.sos_id = vocab.sos_id
         self.eos_id = vocab.eos_id
@@ -95,15 +92,6 @@ class AudioDataset(Dataset):
         self.freq_mask_num = freq_mask_num
         self.n_fft = int(round(sample_rate * 0.001 * frame_length))
         self.hop_length = int(round(sample_rate * 0.001 * frame_shift))
-
-        if apply_spec_augment:
-            for idx in range(self.dataset_size):
-                self.spec_augment_flags.append(True)
-                self.utt_id.append(self.utt_id[idx])
-                self.audio_paths.append(self.audio_paths[idx])
-                self.transcripts.append(self.transcripts[idx])
-                self.score.append(self.score[idx])
-                self.auto_gen_score.append(self.auto_gen_score[idx])
 
         self.vowels = """   iə iə2 iəɜ iə4 iə5 iə6
                             iɛ iɛ1 iɛ2 iɛɜ iɛ4 iɛ5 iɛ6
@@ -126,48 +114,12 @@ class AudioDataset(Dataset):
         
         self.shuffle()
 
-    def _spec_augment(self, feature: Tensor) -> Tensor:
-        """
-        Provides Spec Augment. A simple data augmentation method for speech recognition.
-        This concept proposed in https://arxiv.org/abs/1904.08779
-        """
-        time_axis_length = feature.size(0)
-        freq_axis_length = feature.size(1)
-        time_mask_para = time_axis_length / 20      # Refer to "Specaugment on large scale dataset" paper
-
-        # time mask
-        for _ in range(self.time_mask_num):
-            t = int(np.random.uniform(low=0.0, high=time_mask_para))
-            t0 = random.randint(0, time_axis_length - t)
-            feature[t0: t0 + t, :] = 0
-
-        # freq mask
-        for _ in range(self.freq_mask_num):
-            f = int(np.random.uniform(low=0.0, high=self.freq_mask_para))
-            f0 = random.randint(0, freq_axis_length - f)
-            feature[:, f0: f0 + f] = 0
-
-        return feature
-
-    def _get_feature(self, signal: np.ndarray) -> np.ndarray:
-        """
-        Provides feature extraction
-
-        Inputs:
-            signal (np.ndarray): audio signal
-
-        Returns:
-            feature (np.ndarray): feature extract by sub-class
-        """
-        raise NotImplementedError
-
-    def _parse_audio(self, audio_path: str, apply_spec_augment: bool) -> Tensor:
+    def _parse_audio(self, audio_path: str) -> Tensor:
         """
         Parses audio.
 
         Args:
             audio_path (str): path of audio file
-            apply_spec_augment (bool): flag indication whether to apply spec augment or not
 
         Returns:
             feature (np.ndarray): feature extract by sub-class
@@ -176,18 +128,8 @@ class AudioDataset(Dataset):
         if sr != 16000:
             print(audio_path, file=open('file_invalid_sample_rate.txt', 'a'))
             signal = librosa.resample(signal, orig_sr=sr, target_sr=16000)
-    
-        feature = self._get_feature(signal)
 
-        feature -= feature.mean()
-        feature /= np.std(feature)
-
-        feature = torch.FloatTensor(feature).transpose(0, 1)
-
-        if apply_spec_augment:
-            feature = self._spec_augment(feature)
-
-        return feature
+        return signal
 
     def _parse_phonemes(self, transcript: str) -> list:
         """
@@ -245,7 +187,7 @@ class AudioDataset(Dataset):
             - utt_id: id of sample, help in logging
         """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
-        audio_feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
+        audio_feature = self._parse_audio(audio_path)
         if self.auto_gen_score[idx]:
             r_o, r_c, score = self._process_transcripts(self.transcripts[idx])
         else:
@@ -256,9 +198,9 @@ class AudioDataset(Dataset):
         return audio_feature, r_o, r_c, score, self.utt_id[idx]
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.score, self.auto_gen_score))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.score, self.auto_gen_score = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)
@@ -266,52 +208,3 @@ class AudioDataset(Dataset):
     def count(self):
         return len(self.audio_paths)
 
-
-class FBankDataset(AudioDataset):
-    """ Dataset for filter bank & transcript matching """
-    def _get_feature(self, signal: np.ndarray) -> np.ndarray:
-        return torchaudio.compliance.kaldi.fbank(
-            Tensor(signal).unsqueeze(0),
-            num_mel_bins=self.num_mels,
-            frame_length=self.frame_length,
-            frame_shift=self.frame_shift,
-        ).transpose(0, 1).numpy()
-
-
-class SpectrogramDataset(AudioDataset):
-    """ Dataset for spectrogram & transcript matching """
-    def _get_feature(self, signal: np.ndarray) -> np.ndarray:
-        spectrogram = torch.stft(
-            Tensor(signal), self.n_fft, hop_length=self.hop_length,
-            win_length=self.n_fft, window=torch.hamming_window(self.n_fft),
-            center=False, normalized=False, onesided=True
-        )
-        spectrogram = (spectrogram[:, :, 0].pow(2) + spectrogram[:, :, 1].pow(2)).pow(0.5)
-        spectrogram = np.log1p(spectrogram.numpy())
-        return spectrogram
-
-
-class MelSpectrogramDataset(AudioDataset):
-    """ Dataset for mel-spectrogram & transcript matching """
-    def _get_feature(self, signal: np.ndarray) -> np.ndarray:
-        melspectrogram = librosa.feature.melspectrogram(
-            y=signal,
-            sr=self.sample_rate,
-            n_mels=self.num_mels,
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-        )
-        melspectrogram = librosa.power_to_db(melspectrogram, ref=np.max)
-        return melspectrogram
-
-
-class MFCCDataset(AudioDataset):
-    """ Dataset for MFCC & transcript matching """
-    def _get_feature(self, signal: np.ndarray) -> np.ndarray:
-        return librosa.feature.mfcc(
-            y=signal,
-            sr=self.sample_rate,
-            n_mfcc=self.num_mels,
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-        )
