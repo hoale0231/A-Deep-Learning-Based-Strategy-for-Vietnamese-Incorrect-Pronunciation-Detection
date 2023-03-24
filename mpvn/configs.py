@@ -72,20 +72,20 @@ class DictConfig:
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
     # stage 1
-    md_weight: float = 0.7
-    pr_weight: float = 0.3
-    train_set = 'train'
-    test_set = 'dev'
-    valid_set = 'test'
+    # md_weight: float = 0.7
+    # pr_weight: float = 0.3
+    # train_set = 'train'
+    # test_set = 'dev'
+    # valid_set = 'test'
     
     # stage 2
-    # md_weight: float = 1.0
-    # pr_weight: float = 0.0
-    # train_set = 'label_train'
-    # test_set = 'label_test'
-    # valid_set = 'label_valid'
+    md_weight: float = 1.0
+    pr_weight: float = 0.0
+    train_set = 'label_train'
+    test_set = 'label_test'
+    valid_set = 'label_valid'
     
-    gamma: float = 1.0
+    gamma: float = 2.0
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
