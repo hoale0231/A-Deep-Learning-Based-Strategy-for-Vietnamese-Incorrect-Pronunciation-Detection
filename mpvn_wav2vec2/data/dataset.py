@@ -191,7 +191,7 @@ class AudioDataset(Dataset):
                 rand_factor = 0.6
             r_c, score = self._random_score(phonemes, score, rand_factor)
         else:
-            r_o = r_c = self._parse_phonemes(phonemes)
+            r_o = r_c
             score = self._parse_score(self.score[idx])
             if len(self.transcripts[idx].split()) != len(score):
                 raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")

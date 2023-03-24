@@ -25,8 +25,6 @@ class DictConfig:
 
     # Data
     dataset_path: str = "Data"
-    dataset_download: bool = True
-    vocab_size: int = 5000
     
     # LRScheduler
     lr: float = 1e-04
@@ -73,10 +71,21 @@ class DictConfig:
     
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
+    # stage 1
     md_weight: float = 0.7
     pr_weight: float = 0.3
-    gamma: float = 1.5    
+    train_set = 'train'
+    test_set = 'dev'
+    valid_set = 'test'
     
+    # stage 2
+    # md_weight: float = 1.0
+    # pr_weight: float = 0.0
+    # train_set = 'label_train'
+    # test_set = 'label_test'
+    # valid_set = 'label_valid'
+    
+    gamma: float = 2.0
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
@@ -87,14 +96,11 @@ class DictConfig:
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
     num_workers: int = 4
-    batch_size: int = 8
+    batch_size: int = 4
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     max_epochs: int = 50
     # auto_scale_batch_size: str = "binsearch"
-    train_set = 'train'
-    test_set = 'test'
-    valid_set = 'dev'
 
     # TrainerGPU
     use_cuda: bool = True

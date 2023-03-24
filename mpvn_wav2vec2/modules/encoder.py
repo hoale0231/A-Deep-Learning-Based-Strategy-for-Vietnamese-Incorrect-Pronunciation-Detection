@@ -24,6 +24,7 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Tuple
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+import json
 
 class Wav2Vec2Encoder(nn.Module):
     def __init__(
@@ -32,15 +33,12 @@ class Wav2Vec2Encoder(nn.Module):
             load_pretrain: False
     ):
         super(Wav2Vec2Encoder, self).__init__()
-        cache_dir = '/media/wicii/DDH/class/graduation_project/wav2vec2/cache/'
+        cache_dir = './cache/'
+        self.processor = Wav2Vec2Processor.from_pretrained("nguyenvulebinh/wav2vec2-base-vietnamese-250h", cache_dir=cache_dir)
         if load_pretrain:
-            processor = Wav2Vec2Processor.from_pretrained("nguyenvulebinh/wav2vec2-base-vietnamese-250h", cache_dir=cache_dir)
-            model = Wav2Vec2ForCTC.from_pretrained("nguyenvulebinh/wav2vec2-base-vietnamese-250h", cache_dir=cache_dir)
-            self.processor = processor
-            self.wav2vec2_encoder = model
+            self.wav2vec2_encoder = Wav2Vec2ForCTC.from_pretrained("nguyenvulebinh/wav2vec2-base-vietnamese-250h", cache_dir=cache_dir)
         else:
-            self.processor = None
-            self.wav2vec2_encoder = None
+            self.wav2vec2_encoder = Wav2Vec2ForCTC(json.load(open('config_wav2vec2.json')))
         self.wav2vec2_encoder.lm_head = nn.Linear(in_features=768, out_features=num_classes, bias=True)
 
     def forward(self, signals, labels):
@@ -50,7 +48,8 @@ class Wav2Vec2Encoder(nn.Module):
             return_tensors="pt",
             padding=True,
         ).input_values
-        
+        input_values = input_values.cuda()
+        labels = labels + (labels == 0) * -100
         output = self.wav2vec2_encoder(input_values, labels=labels, output_hidden_states=True)
         loss = output.loss
         logits = output.logits
