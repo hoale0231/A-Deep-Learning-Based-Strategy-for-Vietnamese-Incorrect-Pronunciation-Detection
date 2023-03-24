@@ -28,7 +28,7 @@ class Wav2vec2RNNModel(pl.LightningModule):
             num_classes: int,
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
-            load_pretrain: bool = False
+            load_pretrain: bool = True
     ) -> None:
         super(Wav2vec2RNNModel, self).__init__()
         self.configs = configs
@@ -67,16 +67,19 @@ class Wav2vec2RNNModel(pl.LightningModule):
     def _log_states(
         self, 
         stage: str, 
-        loss: float, 
+        loss: float = None, 
         pr_loss: float = None, 
         md_loss: float = None, 
         per: float = None, 
         acc: float = None,
         f1: float = None,
         precision: float = None,
-        recall: float = None
+        recall: float = None,
+        loss_ctc: float = None,
+        loss_ce: float = None
     ) -> None:
-        self.log(f"{stage}_loss", loss)
+        if loss:
+            self.log(f"{stage}_loss", loss)
         if pr_loss:
             self.log(f"{stage}_pr_loss", pr_loss)
         if md_loss:
@@ -91,9 +94,13 @@ class Wav2vec2RNNModel(pl.LightningModule):
             self.log(f"{stage}_precision", precision*100)
         if recall != None:
             self.log(f"{stage}_recall", recall*100)
+        if loss_ctc:
+            self.log(f"{stage}_ctc_loss", loss_ctc)
+        if loss_ce:
+            self.log(f"{stage}_ce_loss", loss_ce)
           
     def forward(self, inputs, r_os, r_cs, scores): 
-        # Forward encoder   
+        # Forward encoder
         ctc_loss, encoder_log_probs, encoder_outputs = self.encoder(inputs, r_os[:, 1:])
         
         # Forward phone decoder
@@ -117,6 +124,7 @@ class Wav2vec2RNNModel(pl.LightningModule):
             md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
             score=scores
         )
+        self._log_states('train', loss_ctc=ctc_loss)
 
         return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder
                 
@@ -135,7 +143,7 @@ class Wav2vec2RNNModel(pl.LightningModule):
         )
         
         y_hats = pr_outputs.max(-1)[1]
-        y_hats_encoder = encoder_log_probs.max(-1)[1]
+        y_hats_encoder = encoder_log_probs.log_softmax(dim=2).max(-1)[1]
         per = self.per_metric(r_os[:, 1:], y_hats)
         
         if self.configs.md_weight > 0:
