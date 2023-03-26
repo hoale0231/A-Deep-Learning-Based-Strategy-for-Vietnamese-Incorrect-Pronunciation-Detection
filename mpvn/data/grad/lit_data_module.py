@@ -51,6 +51,7 @@ class LightningGradDataModule(pl.LightningDataModule):
             f"{configs.dataset_path}/label_train.csv",
             f"{configs.dataset_path}/label_test.csv",
             f"{configs.dataset_path}/label_valid.csv",
+            f"{configs.dataset_path}/train_total.csv"
         ]
         self.dataset = dict()
         self.batch_size = configs.batch_size
@@ -95,7 +96,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         
-        splits = ['train', 'dev', 'test', 'label_train', 'label_test', 'label_valid']
+        splits = ['train', 'dev', 'test', 'label_train', 'label_test', 'label_valid', 'train_total']
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path).fillna('')
             utt_id, audio_paths, transcripts, score, gen_score = df.utt_id, df.path, df.text, df.score, df.gen_score

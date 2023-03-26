@@ -42,20 +42,22 @@ def _collate_fn(batch, pad_id: int = 0):
     
     utt_ids = []
     scores = []
-
+    L1_list = []
     # fill in tensors
-    for i, (input, r_o, r_c, score, utt_id) in enumerate(batch):
+    for i, (input, r_o, r_c, score, utt_id, is_L1) in enumerate(batch):
         inputs[i, :input.shape[0]] = input
         r_os[i, :len(r_o)] = torch.LongTensor(r_o)
         r_cs[i, :len(r_c)] = torch.LongTensor(r_c)
         scores.extend(score)
         utt_ids.append(utt_id)
- 
+        if is_L1:
+            L1_list.append(i)
+
     scores = torch.LongTensor(scores)
     input_lengths = torch.IntTensor([len(s[0]) for s in batch])
     r_os_lengths = torch.IntTensor([len(s[1])-1 for s in batch])
 
-    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids
+    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
 
 
 class AudioDataLoader(DataLoader):

@@ -29,27 +29,25 @@ class DictConfig:
     # LRScheduler
     lr: float = 1e-04
 
-    # ReduceLROnPlateauLRScheduler
-    lr_patience: int = 1
-    scheduler: str = "reduce_lr_on_plateau"
-    lr_factor: float = 0.3
+    # # ReduceLROnPlateauLRScheduler
+    # lr_patience: int = 1
+    # scheduler: str = "reduce_lr_on_plateau"
+    # lr_factor: float = 0.3
 
-    # TriStageLRScheduler
-    init_lr: float = 1e-10
-    peak_lr: float = 1e-04
-    final_lr: float = 1e-07
-    init_lr_scale: float = 0.01
-    final_lr_scale: float = 0.05
-    warmup_steps: int = 10000
-    decay_steps: int = 150000
-    scheduler: str = "tri_stage"
+    # # TriStageLRScheduler
+    # init_lr: float = 1e-10
+    # peak_lr: float = 1e-04
+    # final_lr: float = 1e-07
+    # init_lr_scale: float = 0.01
+    # final_lr_scale: float = 0.05
+    # warmup_steps: int = 10000
+    # decay_steps: int = 150000
+    # scheduler: str = "tri_stage"
 
     # TransformerLRScheduler
     peak_lr: float = 1e-04
     final_lr: float = 1e-07
     final_lr_scale: float = 0.05
-    warmup_steps: int = 16000
-    decay_steps: int = 150000
     scheduler: str = "transformer"
 
     # Conformer-Transformer
@@ -59,11 +57,11 @@ class DictConfig:
     num_attention_heads: int = 8
     feed_forward_expansion_factor: int = 4
     conv_expansion_factor: int = 2
-    input_dropout_p: float = 0.1
-    feed_forward_dropout_p: float = 0.1
-    attention_dropout_p: float = 0.1
-    conv_dropout_p: float = 0.1
-    decoder_dropout_p: float = 0.1
+    input_dropout_p: float = 0.2
+    feed_forward_dropout_p: float = 0.2
+    attention_dropout_p: float = 0.2
+    conv_dropout_p: float = 0.2
+    decoder_dropout_p: float = 0.2
     conv_kernel_size: int = 33
     half_step_residual: bool = True
     max_length: int = 128
@@ -71,19 +69,40 @@ class DictConfig:
     
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
+    
+    # stage 0
+    md_weight: float = 0.0
+    pr_weight: float = 1.0
+    train_set = 'train'
+    test_set = 'dev'
+    valid_set = 'test'
+    warmup_steps: int = 16000
+    decay_steps: int = 100000
+    
     # stage 1
     # md_weight: float = 0.7
     # pr_weight: float = 0.3
     # train_set = 'train'
     # test_set = 'dev'
     # valid_set = 'test'
+    # warmup_steps: int = 16000
+    # decay_steps: int = 50000
+    
+    # combine L1 & L2
+    # md_weight: float = 0.7
+    # pr_weight: float = 0.3
+    # train_set = 'train_total'
+    # test_set = 'label_test'
+    # valid_set = 'label_valid'
     
     # stage 2
-    md_weight: float = 1.0
-    pr_weight: float = 0.0
-    train_set = 'label_train'
-    test_set = 'label_test'
-    valid_set = 'label_valid'
+    # md_weight: float = 1.0
+    # pr_weight: float = 0.0
+    # train_set = 'label_train'
+    # test_set = 'label_test'
+    # valid_set = 'label_valid'
+    # warmup_steps: int = 10000
+    # decay_steps: int = 35000
     
     gamma: float = 2.0
     joint_ctc_attention: bool = True

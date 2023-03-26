@@ -106,7 +106,7 @@ class ConformerRNNModel(pl.LightningModule):
         if recall != None:
             self.log(f"{stage}_recall", recall*100)
           
-    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores): 
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list): 
         # Forward encoder   
         encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         
@@ -121,6 +121,13 @@ class ConformerRNNModel(pl.LightningModule):
         # Forward word decoder
         md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
         
+        if len(L1_list) != len(r_os):
+            encoder_log_probs = encoder_log_probs[L1_list] 
+            encoder_output_lengths = encoder_output_lengths[L1_list]
+            pr_outputs = pr_outputs[L1_list] 
+            r_os = r_os[L1_list]
+            r_os_lengths = r_os_lengths[L1_list] 
+            
         # Calc loss
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
         pr_outputs = pr_outputs[:, :max_target_length, :]
@@ -137,22 +144,26 @@ class ConformerRNNModel(pl.LightningModule):
         return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
-        per = self.per_metric(r_os[:, 1:], y_hats)
+
+        if L1_list:
+            per = self.per_metric(r_os[:, 1:], y_hats)
+        else:
+            per = None
         
         if self.configs.md_weight > 0:
             scores = scores.cpu()
@@ -167,11 +178,12 @@ class ConformerRNNModel(pl.LightningModule):
             
         if batch_idx == 0:
             print("\nResult of", utt_ids[0])
-            print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '-').replace(' ', ''))
-            print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''))
-            print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''))
-            print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '-').replace(' ', ''))
-            print("Per:", per)
+            if L1_list:
+                print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Per:", per)
             
             if self.configs.md_weight > 0:
                 print("MED output   :", md_predict)
@@ -187,13 +199,16 @@ class ConformerRNNModel(pl.LightningModule):
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
-        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids = batch
+        inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         
         y_hats = pr_outputs.max(-1)[1]
-        per = self.per_metric(r_os[:, 1:], y_hats)
+        if L1_list:
+            per = self.per_metric(r_os[:, 1:], y_hats)
+        else:
+            per = None
         
         md_predict = md_outputs.max(-1)[1].cpu()
         scores = scores.cpu()
@@ -211,9 +226,9 @@ class ConformerRNNModel(pl.LightningModule):
             
         self.df.loc[len(self.df)] = [
             utt_ids[0],
-            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '-').replace(' ', ''),
-            self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '-').replace(' ', ''),
-            self.vocab.label_to_string(y_hats[0]).replace('   ', '-').replace(' ', ''),
+            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' ') if L1_list else None,
             ' '.join([str(s) for s in scores.cpu().tolist()]),
             ' '.join([str(s) for s in md_outputs.max(-1)[1].cpu().tolist()]),
             per, acc, f1_, precision_, recall_

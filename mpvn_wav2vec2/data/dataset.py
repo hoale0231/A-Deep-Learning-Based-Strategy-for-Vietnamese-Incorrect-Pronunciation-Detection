@@ -138,7 +138,7 @@ class AudioDataset(Dataset):
         return [self.sos_id] + self.vocab.string_to_label(' '.join(phonemes)) + [self.eos_id]
     
     def _random_replace(self, phones: str):
-        phones = phones.split('-')
+        phones = phones.split('=')
         new_phones = []
         for i, p in enumerate(phones):
             p_ = p
@@ -157,7 +157,7 @@ class AudioDataset(Dataset):
                     elif p in self.vowels:
                         p_ = np.random.choice(tuple(set(self.vowels) - {p}))
             new_phones.append(p_)
-        return '-'.join(new_phones)  
+        return '='.join(new_phones)  
     
     def _random_score(self, phonemes: list, real_score: list, rand_factor: float):   
         replace = np.random.rand(len(phonemes)) < rand_factor
@@ -180,7 +180,7 @@ class AudioDataset(Dataset):
         """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
         audio_feature = self._parse_audio(audio_path)
-        phonemes = [self.phone_map[word].replace(' ', '-') for word in self.transcripts[idx].split()]
+        phonemes = [self.phone_map[word].replace(' ', '=') for word in self.transcripts[idx].split()]
         r_o = self._parse_phonemes(phonemes)
         if self.auto_gen_score[idx]:
             if self.score[idx]:

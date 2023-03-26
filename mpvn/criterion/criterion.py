@@ -137,7 +137,10 @@ class JointLoss(nn.Module):
             md_log_probs: Tensor,
             score: Tensor
     ) -> Tuple[Tensor, Tensor, Tensor]:
-        pr_loss = self.pr_loss(encoder_log_probs, pr_log_probs, encoder_output_lengths, r_os, r_os_lengths) if self.pr_weight > 0 else 0
         md_loss = self.md_loss(md_log_probs, score) if self.md_weight > 0 else 0
+        pr_loss = self.pr_loss(
+            encoder_log_probs, pr_log_probs, 
+            encoder_output_lengths, r_os, r_os_lengths
+        ) if self.pr_weight > 0 and len(r_os) != 0 else 0
         loss = md_loss * self.md_weight + pr_loss * self.pr_weight
         return loss, pr_loss, md_loss

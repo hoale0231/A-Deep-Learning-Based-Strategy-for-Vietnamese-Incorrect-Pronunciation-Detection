@@ -6,9 +6,9 @@ from tqdm import tqdm
 import torch.nn as nn
 from pathlib import Path
 from typing import List, Dict
-from pydub import AudioSegment
+# from pydub import AudioSegment
 from collections import defaultdict
-from textgrid import TextGrid, IntervalTier
+# from textgrid import TextGrid, IntervalTier
 
 def average_checkpoints(model: nn.modules, filenames: List[Path], device: torch.device = torch.device("cpu")) -> dict:
     n = len(filenames)
