@@ -178,7 +178,7 @@ class RelativeMultiHeadAttention(nn.Module):
         self.query_proj = Linear(d_model, d_model)
         self.key_proj = Linear(d_model, d_model)
         self.value_proj = Linear(d_model, d_model)
-        self.pos_proj = Linear(d_model, d_model, bias=False)
+        self.pos_proj = Linear(d_model, d_model)
 
         self.dropout = nn.Dropout(p=dropout_p)
         self.u_bias = nn.Parameter(torch.Tensor(self.num_heads, self.d_head))
@@ -195,6 +195,7 @@ class RelativeMultiHeadAttention(nn.Module):
             value: Tensor,
             pos_embedding: Tensor,
             mask: Optional[Tensor] = None,
+            return_attention: bool = False
     ) -> Tensor:
         batch_size = value.size(0)
 
@@ -218,7 +219,8 @@ class RelativeMultiHeadAttention(nn.Module):
 
         context = torch.matmul(attn, value).transpose(1, 2)
         context = context.contiguous().view(batch_size, -1, self.d_model)
-
+        if return_attention:
+            return self.out_proj(context), attn
         return self.out_proj(context)
 
     def _relative_shift(self, pos_score: Tensor) -> Tensor:
@@ -269,6 +271,42 @@ class MultiHeadedSelfAttentionModule(nn.Module):
 
         return self.dropout(outputs)
 
+class MultiHeadedAttentionModule(nn.Module):
+    """
+    Conformer employ multi-headed self-attention (MHSA) while integrating an important technique from Transformer-XL,
+    the relative sinusoidal positional encoding scheme. The relative positional encoding allows the self-attention
+    module to generalize better on different input length and the resulting encoder is more robust to the variance of
+    the utterance length. Conformer use prenorm residual units with dropout which helps training
+    and regularizing deeper models.
+
+    Args:
+        d_model (int): The dimension of model
+        num_heads (int): The number of attention heads.
+        dropout_p (float): probability of dropout
+
+    Inputs: inputs, mask
+        - **inputs** (batch, time, dim): Tensor containing input vector
+        - **mask** (batch, 1, time2) or (batch, time1, time2): Tensor containing indices to be masked
+
+    Returns:
+        - **outputs** (batch, time, dim): Tensor produces by relative multi headed self attention module.
+    """
+    def __init__(self, d_model: int, num_heads: int, dropout_p: float = 0.1):
+        super(MultiHeadedAttentionModule, self).__init__()
+        self.positional_encoding = PositionalEncoding(d_model)
+        # self.layer_norm = LayerNorm(d_model)
+        self.attention = RelativeMultiHeadAttention(d_model, num_heads, dropout_p)
+        self.dropout = nn.Dropout(p=dropout_p)
+
+    def forward(self, query: Tensor, key: Tensor, value: Tensor, mask: Optional[Tensor] = None):
+        batch_size, seq_length, _ = key.size()
+        pos_embedding = self.positional_encoding(seq_length)
+        pos_embedding = pos_embedding.repeat(batch_size, 1, 1)
+
+        # inputs = self.layer_norm(inputs)
+        outputs, attn = self.attention(query, key, value, pos_embedding=pos_embedding, mask=mask, return_attention=True)
+
+        return self.dropout(outputs), attn
 
 class MultiHeadLocationAwareAttention(nn.Module):
     """

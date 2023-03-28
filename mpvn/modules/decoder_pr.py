@@ -4,7 +4,7 @@ import random
 from torch import Tensor
 from typing import Optional, Any, Tuple
 
-from mpvn.modules.attention import MultiHeadAttention, MultiHeadedSelfAttentionModule, MultiHeadLocationAwareAttention
+from mpvn.modules.attention import *
 from mpvn.modules.embedding import Embedding, PositionalEncoding
 from mpvn.modules.mask import get_attn_pad_mask, get_attn_subsequent_mask
 from mpvn.modules.modules import Linear, AddNorm, PositionWiseFeedForwardNet, View, LayerNorm
@@ -342,7 +342,7 @@ class DecoderTransformer(nn.Module):
         self.input_dropout = nn.Dropout(dropout_p)
         
         self.self_attention = AddNorm(MultiHeadedSelfAttentionModule(hidden_state_dim, num_heads, attention_dropout_p), hidden_state_dim)
-        self.attention = MultiHeadAttention(hidden_state_dim, num_heads=num_heads)
+        self.attention = RelativeMultiHeadAttention(hidden_state_dim, num_heads=num_heads, dropout_p=0.1)
         self.fc = nn.Sequential(
             nn.Linear(hidden_state_dim << 1, hidden_state_dim),
             nn.Tanh(),
@@ -372,7 +372,6 @@ class DecoderTransformer(nn.Module):
         outputs = self.input_dropout(outputs)
         
         outputs = self.self_attention(outputs, self_attn_mask)
-        
         context, attn = self.attention(outputs, encoder_outputs, encoder_outputs)
         
         outputs = torch.cat((outputs, context), dim=2)

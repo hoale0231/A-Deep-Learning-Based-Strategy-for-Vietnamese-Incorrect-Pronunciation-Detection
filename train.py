@@ -11,7 +11,8 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
-from mpvn.model.model import *
+from mpvn.model.model_transformer import ConformerTransformerModel
+from mpvn.model.model import ConformerRNNModel, accuracy_score, f1_score, precision_score, recall_score
 from mpvn.configs import DictConfig
 
 def get_parser():
@@ -85,10 +86,12 @@ if __name__ == '__main__':
                         max_epochs=configs.max_epochs,
                         callbacks=[checkpoint_callback, early_stop_callback])
     
+    model_class = ConformerTransformerModel
+    
     if args.checkpoint != None:
         if os.path.isdir(args.checkpoint):
             print('Checkpoint path is a directory, do avg checkpoint')
-            model = ConformerRNNModel(
+            model = model_class(
                 configs=configs,
                 num_classes=len(vocab),
                 vocab=vocab,
@@ -98,7 +101,7 @@ if __name__ == '__main__':
         elif os.path.isfile(args.checkpoint):
             print('Checkpoint path is a file, dont avg checkpoint')
 
-            model = ConformerRNNModel.load_from_checkpoint(
+            model = model_class.load_from_checkpoint(
                 args.checkpoint,
                 configs=configs,
                 num_classes=len(vocab),
@@ -108,7 +111,7 @@ if __name__ == '__main__':
         else:
             raise Exception('Checkpoint path is not file or directory!')
     else:
-        model = ConformerRNNModel(
+        model = model_class(
             configs=configs,
             num_classes=len(vocab),
             vocab=vocab,
