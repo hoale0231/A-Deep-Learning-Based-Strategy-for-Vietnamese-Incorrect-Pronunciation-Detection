@@ -50,9 +50,9 @@ class AddNorm(nn.Module):
         output = self.sublayer(*args)
 
         if isinstance(output, tuple):
-            return self.layer_norm(output[0] + residual), output[1]
+            return self.layer_norm(output[0] + residual), self.layer_norm(output[0]), output[1]
 
-        return self.layer_norm(output + residual)
+        return self.layer_norm(output + residual), self.layer_norm(output)
 
 class Linear(nn.Module):
     """
