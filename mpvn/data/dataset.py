@@ -105,20 +105,20 @@ class AudioDataset(Dataset):
                 self.score.append(self.score[idx])
                 self.auto_gen_score.append(self.auto_gen_score[idx])
 
-        self.vowels = """   a0 a1 a2 a3 a5
-                            ă0 ă1 ă2 ă3 ă5
-                            â0 â1 â2 â3 â5
-                            ax0 ax1 ax2 ax3 ax5
-                            e0 e1 e2 e3 e5
-                            ê0 ê1 ê2 ê3 ê5
-                            i0 i1 i2 i3 i5
-                            iê0 iê1 iê2 iê3 iê5
-                            o0 o1 o2 o3 o5
-                            ô0 ô1 ô2 ô3 ô5
-                            ơ0 ơ1 ơ2 ơ3 ơ5
-                            u0 u1 u2 u3 u5
-                            ư0 ư1 ư2 ư3 ư5
-                            ưa0 ưa1 ưa2 ưa3 ưa5""".split()
+        self.vowels = """   a0 a1 a2 a3 a4 a5
+                            ă0 ă1 ă2 ă3 ă4 ă5
+                            â0 â1 â2 â3 â4 â5
+                            ax0 ax1 ax2 ax3 ax4 ax5
+                            e0 e1 e2 e3 e4 e5
+                            ê0 ê1 ê2 ê3 ê4 ê5
+                            i0 i1 i2 i3 i4 i5
+                            iê0 iê1 iê2 iê3 iê4 iê5
+                            o0 o1 o2 o3 o4 o5
+                            ô0 ô1 ô2 ô3 ô4 ô5
+                            ơ0 ơ1 ơ2 ơ3 ơ4 ơ5
+                            u0 u1 u2 u3 u4 u5
+                            ư0 ư1 ư2 ư3 ư4 ư5
+                            ưa0 ưa1 ưa2 ưa3 ưa4 ưa5""".split()
         self.init_consonants = "b m v n đ t l s d r k h p g th ph tr ch nh kh ng".split()
         self.final_consonants = "-p -t -k -m -n -i -w -k -ng".split()
         
