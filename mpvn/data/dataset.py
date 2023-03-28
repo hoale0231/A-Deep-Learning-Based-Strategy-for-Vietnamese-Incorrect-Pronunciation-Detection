@@ -118,9 +118,14 @@ class AudioDataset(Dataset):
                             ơ0 ơ1 ơ2 ơ3 ơ4 ơ5
                             u0 u1 u2 u3 u4 u5
                             ư0 ư1 ư2 ư3 ư4 ư5
-                            ưa0 ưa1 ưa2 ưa3 ưa4 ưa5""".split()
-        self.init_consonants = "b m v n đ t l s d r k h p g th ph tr ch nh kh ng".split()
-        self.final_consonants = "-p -t -k -m -n -i -w -k -ng".split()
+                            ưa0 ưa1 ưa2 ưa3 ưa4 ưa5""".split() + ['']
+        self.init_vowels = ["w", ""]
+        self.init_consonants = "b m v n đ t l s d r k h p g th ph tr ch nh kh ng".split() + ['']
+        self.final_consonants = "-p -t -k -m -n -i -w -k -ng".split() + ['']
+        
+        self.set_vowels = set(self.vowels)
+        self.set_init_consonants = set(self.init_consonants)
+        self.set_final_consonants = set(self.final_consonants)
         
         self.shuffle()
 
@@ -195,25 +200,27 @@ class AudioDataset(Dataset):
     
     def _random_replace(self, phones: str):
         phones = phones.split('=')
-        new_phones = []
-        for i, p in enumerate(phones):
-            p_ = p
-            if np.random.rand() < 0.5:
-                if i == 0:
-                    if p in self.init_consonants:
-                        p_ = np.random.choice(tuple(set(self.init_consonants) - {p}))
-                    elif p in self.vowels:
-                        p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-                elif i == len(phones) - 2:
-                    if p in self.vowels:
-                        p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-                elif i == len(phones) - 1:
-                    if p in self.final_consonants:
-                        p_ = np.random.choice(tuple(set(self.final_consonants) - {p}))
-                    elif p in self.vowels:
-                        p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-            new_phones.append(p_)
-        return '='.join(new_phones)
+        init_cons, init_vowels, vowels, final_cons = '', '', '', ''
+        for p in phones:
+            if p in self.set_init_consonants:
+                init_cons = p
+            elif p in self.init_vowels:
+                init_vowels = p
+            elif p in self.set_vowels:
+                vowels = p
+            elif p in self.set_final_consonants:
+                final_cons = p
+        
+        if np.random.rand() > 0.5:
+            init_cons = np.random.choice(self.init_consonants)
+        if np.random.rand() > 0.5:
+            init_vowels = np.random.choice(self.init_vowels)
+        if np.random.rand() > 0.5:
+            vowels = np.random.choice(self.vowels)
+        if np.random.rand() > 0.5:
+            final_cons = np.random.choice(self.final_consonants)
+        phones = [p for p in [init_cons, init_vowels, vowels, final_cons] if p != '']
+        return '='.join(phones)
     
     
     def _random_score(self, phonemes: list, real_score: list, rand_factor: float):   
