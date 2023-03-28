@@ -169,19 +169,21 @@ class ConformerTransformerModel(pl.LightningModule):
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
+        r_os = r_os[:, 1:-1]
+        r_cs = r_cs[:, 1:-1]
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
 
         if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
+            per = self.per_metric(r_os, y_hats)
         else:
             per = None
         
         if self.configs.md_weight > 0:
             scores = scores.cpu()
             md_predict = md_outputs.max(-1)[1].cpu()
-  
+            
             acc = accuracy_score(scores, md_predict)
             f1_ = f1_score(scores, md_predict, pos_label=0)
             precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -194,8 +196,8 @@ class ConformerTransformerModel(pl.LightningModule):
             if L1_list:
                 print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Ro:", r_os.shape, self.vocab.label_to_string(r_os[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Rc:", r_cs.shape, self.vocab.label_to_string(r_cs[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("Per:", per)
             
             if self.configs.md_weight > 0:
@@ -217,16 +219,18 @@ class ConformerTransformerModel(pl.LightningModule):
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
+        r_os = r_os[:, 1:-1]
+        r_cs = r_cs[:, 1:-1]
         
         y_hats = pr_outputs.max(-1)[1]
         if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
+            per = self.per_metric(r_os, y_hats)
         else:
             per = None
         
         md_predict = md_outputs.max(-1)[1].cpu()
         scores = scores.cpu()
-  
+        
         acc = accuracy_score(scores, md_predict)
         f1_ = f1_score(scores, md_predict, pos_label=0)
         precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -240,8 +244,8 @@ class ConformerTransformerModel(pl.LightningModule):
             
         self.df.loc[len(self.df)] = [
             utt_ids[0],
-            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
-            self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(r_os).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(r_cs).replace('   ', '=').replace(' ', '').replace('=', ' '),
             self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' ') if L1_list else None,
             ' '.join([str(s) for s in scores.cpu().tolist()]),
             ' '.join([str(s) for s in md_outputs.max(-1)[1].cpu().tolist()]),
