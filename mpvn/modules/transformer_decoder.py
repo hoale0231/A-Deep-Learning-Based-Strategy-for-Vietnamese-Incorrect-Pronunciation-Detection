@@ -43,12 +43,11 @@ class DecoderTransformer(nn.Module):
                 module_factor=self.feed_forward_residual_factor,
             )
         self.self_attention = AddNorm(
-            MultiHeadedSelfAttentionModule(
+            MultiHeadedSelfAttentionMaskedQueryModule(
                 hidden_state_dim, 
                 num_heads, 
                 attention_dropout_p
-                ),
-            d_model=hidden_state_dim
+                ), d_model=hidden_state_dim
             )
         self.attention = AddNorm(
             MultiHeadedAttentionModule(
@@ -130,17 +129,17 @@ class DecoderTransformer(nn.Module):
         output_lengths = decoder_inputs.size(1)
         
         self_attn_mask, encoder_attn_mask = self.get_mask(decoder_inputs, targets_lengths, encoder_outputs, encoder_output_lengths)
-
+        
         outputs = self.embedding(decoder_inputs) + self.positional_encoding(output_lengths)
         outputs = self.input_dropout(outputs)
+        outputs = self.pre_feed_forward(outputs)
         
-        embedded = self.pre_feed_forward(outputs)
-        outputs = self.self_attention(embedded, self_attn_mask)
-        context, attn = self.attention(outputs, encoder_outputs, encoder_outputs, encoder_attn_mask)
+        outputs_res, outputs = self.self_attention(outputs, self_attn_mask)
+        context, _, attn = self.attention(outputs, encoder_outputs, encoder_outputs, encoder_attn_mask)
         outputs = self.post_feed_forward(context)
 
         if get_mispronunciation_phone_features:
-            mispronunciation_phone_features = torch.cat((embedded, context), dim=2)
+            mispronunciation_phone_features = torch.cat((outputs_res, context), dim=2)
             mispronunciation_phone_features = self._split_output_to_word(decoder_inputs, mispronunciation_phone_features)
         else:
             mispronunciation_phone_features = None

@@ -249,10 +249,10 @@ class AudioDataset(Dataset):
         if self.auto_gen_score[idx]:
             if self.score[idx]:
                 score = self._parse_score(self.score[idx])
-                rand_factor = 0.4
+                rand_factor = 0.25
             else:
                 score = [1] * len(phonemes) 
-                rand_factor = 0.6
+                rand_factor = 0.5
             r_c, score = self._random_score(phonemes, score, rand_factor)
         else:
             r_c = r_o

@@ -270,6 +270,43 @@ class MultiHeadedSelfAttentionModule(nn.Module):
         outputs = self.attention(inputs, inputs, inputs, pos_embedding=pos_embedding, mask=mask)
 
         return self.dropout(outputs)
+    
+class MultiHeadedSelfAttentionMaskedQueryModule(nn.Module):
+    """
+    Conformer employ multi-headed self-attention (MHSA) while integrating an important technique from Transformer-XL,
+    the relative sinusoidal positional encoding scheme. The relative positional encoding allows the self-attention
+    module to generalize better on different input length and the resulting encoder is more robust to the variance of
+    the utterance length. Conformer use prenorm residual units with dropout which helps training
+    and regularizing deeper models.
+
+    Args:
+        d_model (int): The dimension of model
+        num_heads (int): The number of attention heads.
+        dropout_p (float): probability of dropout
+
+    Inputs: inputs, mask
+        - **inputs** (batch, time, dim): Tensor containing input vector
+        - **mask** (batch, 1, time2) or (batch, time1, time2): Tensor containing indices to be masked
+
+    Returns:
+        - **outputs** (batch, time, dim): Tensor produces by relative multi headed self attention module.
+    """
+    def __init__(self, d_model: int, num_heads: int, dropout_p: float = 0.1):
+        super(MultiHeadedSelfAttentionMaskedQueryModule, self).__init__()
+        self.positional_encoding = PositionalEncoding(d_model)
+        self.layer_norm = LayerNorm(d_model)
+        self.attention = RelativeMultiHeadAttention(d_model, num_heads, dropout_p)
+        self.dropout = nn.Dropout(p=dropout_p)
+
+    def forward(self, inputs: Tensor, mask: Optional[Tensor] = None):
+        batch_size, seq_length, _ = inputs.size()
+        pos_embedding = self.positional_encoding(seq_length)
+        pos_embedding = pos_embedding.repeat(batch_size, 1, 1)
+        
+        inputs = self.layer_norm(inputs)
+        outputs = self.attention(pos_embedding, inputs, inputs, pos_embedding=pos_embedding, mask=mask)
+
+        return self.dropout(outputs)
 
 class MultiHeadedAttentionModule(nn.Module):
     """
