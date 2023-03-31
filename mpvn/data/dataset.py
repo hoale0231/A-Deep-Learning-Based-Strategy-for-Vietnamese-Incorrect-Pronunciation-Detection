@@ -122,6 +122,7 @@ class AudioDataset(Dataset):
         self.init_vowels = ["w", ""]
         self.init_consonants = "b m v n đ t l s d r k h p g th ph tr ch nh kh ng".split() + ['']
         self.final_consonants = "-p -t -k -m -n -i -w -k -ng".split() + ['']
+        self.set_phones = { phones for phones in self.phone_map.values()}
         
         self.set_vowels = set(self.vowels)
         self.set_init_consonants = set(self.init_consonants)
@@ -211,8 +212,8 @@ class AudioDataset(Dataset):
             elif p in self.set_final_consonants:
                 final_cons = p
               
-        new_phones = ''
-        while len(new_phones) == 0 or new_phones == phones: 
+        new_phones = []
+        while len(new_phones) == 0 or new_phones == phones or ' '.join(new_phones) not in self.set_phones: 
             init_cons_ = init_cons
             init_vowels_ = init_vowels
             vowels_ = vowels
