@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 from mpvn.configs import DictConfig
 from mpvn.metric import *
-from mpvn.modules.transformer_decoder import DecoderTransformer
+from mpvn.modules.transformer_decoder_autogressive import DecoderTransformer
 from mpvn.modules.decoder import WordDecoder
 from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
@@ -111,58 +111,58 @@ class ConformerTransformerModel(pl.LightningModule):
         if recall != None:
             self.log(f"{stage}_recall", recall*100)
           
-    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list): 
-        batch_size = inputs.size(0)
-        
-        r_os = r_os[:, 1:]
-        r_os = r_os[r_os != self.vocab.eos_id].view(batch_size, -1)
-        r_cs = r_cs[:, 1:]
-        r_cs = r_cs[r_cs != self.vocab.eos_id].view(batch_size, -1)
-        r_os_lengths -= 1
-        
-        # Forward encoder   
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        
-        # Forward phone decoder
-        train_md = self.configs.md_weight > 0
-        pr_outputs, self_attn_decoder, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(
-            r_os, encoder_outputs, r_os_lengths, encoder_output_lengths, train_md
-        )
-        
-        # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
-        if train_md and not torch.equal(r_cs, r_os):
-            _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
-        
-        # Forward word decoder
-        md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
-        
-        if len(L1_list) != len(r_os):
-            encoder_log_probs = encoder_log_probs[L1_list] 
-            encoder_output_lengths = encoder_output_lengths[L1_list]
-            pr_outputs = pr_outputs[L1_list] 
-            r_os = r_os[L1_list]
-            r_os_lengths = r_os_lengths[L1_list] 
-            
-        # Calc loss
-        # max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
-        # max_target_length = r_os.size(1)
-        # pr_outputs = pr_outputs[:, :max_target_length, :]
-        loss, pr_loss, md_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
-            encoder_output_lengths=encoder_output_lengths,
-            r_os=r_os,
-            r_os_lengths=r_os_lengths,
-            md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
-            score=scores
-        )
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list): 
+        try:
+            # Forward encoder   
+            encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
 
+            # Forward phone decoder
+            train_md = self.configs.md_weight > 0
+            pr_outputs, self_attn_decoder, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(
+                r_os, encoder_outputs, r_os_lengths, encoder_output_lengths, train_md
+            )
+            
+            # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
+            if train_md and not torch.equal(r_cs, r_os):
+                _, self_attn_decoder, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, r_os_lengths, encoder_output_lengths, train_md)
+            
+            # Forward word decoder
+            md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
+            
+            if len(L1_list) != len(r_os):
+                encoder_log_probs = encoder_log_probs[L1_list] 
+                encoder_output_lengths = encoder_output_lengths[L1_list]
+                pr_outputs = pr_outputs[L1_list] 
+                r_os = r_os[L1_list]
+                r_os_lengths = r_os_lengths[L1_list] 
+            
+            # Calc loss
+            max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
+            pr_outputs = pr_outputs[:, :max_target_length, :]
+            loss, pr_loss, md_loss = self.criterion(
+                encoder_log_probs=encoder_log_probs.transpose(0, 1),
+                pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
+                encoder_output_lengths=encoder_output_lengths,
+                r_os=r_os[:, 1:],
+                r_os_lengths=r_os_lengths,
+                md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
+                score=scores
+            )
+        except:
+            print('Error at:', utt_ids)
+            print('r_cs', r_cs)
+            print('score', scores.shape)
+            print('pr outputs', pr_outputs.shape)
+            print('encoder outputs', encoder_log_probs.shape)
+            print('md', md_outputs.shape)
+            exit()
+            
         return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder
-                
+     
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
         return loss
@@ -170,10 +170,10 @@ class ConformerTransformerModel(pl.LightningModule):
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
-        r_os = r_os[:, 1:-1]
-        r_cs = r_cs[:, 1:-1]
+        r_os = r_os[:, 1:]
+        r_cs = r_cs[:, 1:]
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
@@ -194,13 +194,13 @@ class ConformerTransformerModel(pl.LightningModule):
         else:
             scores = md_predict = acc = f1_ = precision_ = recall_ = None
             
-        if batch_idx == 1:
+        if batch_idx == 0:
             print("\nResult of", utt_ids[0])
             if L1_list:
                 print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Ro:", r_os[0].shape, self.vocab.label_to_string(r_os[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Rc:", r_cs[0].shape, self.vocab.label_to_string(r_cs[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Ro:", r_os.shape, self.vocab.label_to_string(r_os[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Rc:", r_cs.shape, self.vocab.label_to_string(r_cs[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("Per:", per)
             
             if self.configs.md_weight > 0:
@@ -222,10 +222,10 @@ class ConformerTransformerModel(pl.LightningModule):
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
         loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
-        r_os = r_os[:, 1:-1]
-        r_cs = r_cs[:, 1:-1]
+        r_os = r_os[:, 1:]
+        r_cs = r_cs[:, 1:]
         
         y_hats = pr_outputs.max(-1)[1]
         if L1_list:
@@ -324,6 +324,7 @@ class ConformerTransformerModel(pl.LightningModule):
             gamma: float = 1.0
     ) -> nn.Module:
         """ Configure criterion """
+        
         return JointLoss(
             ignore_index=ignore_index,
             reduction="mean",

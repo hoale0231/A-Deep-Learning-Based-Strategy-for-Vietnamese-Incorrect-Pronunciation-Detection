@@ -196,9 +196,8 @@ class Conv2dSubampling(nn.Module):
         outputs = outputs.contiguous().view(batch_size, subsampled_lengths, channels * sumsampled_dim)
 
         if self.half_subsampling:
-            output_lengths = input_lengths >> 1
+            output_lengths = (input_lengths - 1) >> 1
         else:
-            output_lengths = input_lengths >> 2
-        output_lengths -= 1
+            output_lengths = (((input_lengths - 1) >> 1) - 1) >> 1
 
         return outputs, output_lengths

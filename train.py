@@ -5,13 +5,13 @@ import os
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
-from mpvn.model.model_transformer import ConformerTransformerModel
+from mpvn.model.model_transformer_autoregressive import ConformerTransformerModel
 from mpvn.model.model import ConformerRNNModel, accuracy_score, f1_score, precision_score, recall_score
 from mpvn.configs import DictConfig
 
@@ -70,6 +70,8 @@ if __name__ == '__main__':
         mode="min"
     )
     
+    learning_rate_callback = LearningRateMonitor(logging_interval='step')
+    
     logger = TensorBoardLogger(args.logdir, name="Pronunciation for Vietnamese")
     configs = DictConfig()
 
@@ -84,7 +86,7 @@ if __name__ == '__main__':
                         logger=logger,
                         # val_check_interval=0.25,
                         max_epochs=configs.max_epochs,
-                        callbacks=[checkpoint_callback, early_stop_callback])
+                        callbacks=[checkpoint_callback, early_stop_callback, learning_rate_callback])
     
     model_class = ConformerTransformerModel
     

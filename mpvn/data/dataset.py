@@ -210,17 +210,25 @@ class AudioDataset(Dataset):
                 vowels = p
             elif p in self.set_final_consonants:
                 final_cons = p
-        
-        if np.random.rand() > 0.5:
-            init_cons = np.random.choice(self.init_consonants)
-        if np.random.rand() > 0.5:
-            init_vowels = np.random.choice(self.init_vowels)
-        if np.random.rand() > 0.5:
-            vowels = np.random.choice(self.vowels)
-        if np.random.rand() > 0.5:
-            final_cons = np.random.choice(self.final_consonants)
-        phones = [p for p in [init_cons, init_vowels, vowels, final_cons] if p != '']
-        return '='.join(phones)
+              
+        new_phones = ''
+        while len(new_phones) == 0 or new_phones == phones: 
+            init_cons_ = init_cons
+            init_vowels_ = init_vowels
+            vowels_ = vowels
+            final_cons_ = final_cons
+
+            if np.random.rand() < 0.25:
+                init_cons_ = np.random.choice(self.init_consonants)
+            if np.random.rand() < 0.25:
+                init_vowels_ = np.random.choice(self.init_vowels)
+            if np.random.rand() < 0.25:
+                vowels_ = np.random.choice(self.vowels)
+            if np.random.rand() < 0.25:
+                final_cons_ = np.random.choice(self.final_consonants)
+            new_phones = [p for p in [init_cons_, init_vowels_, vowels_, final_cons_] if p != '']
+            
+        return '='.join(new_phones)
     
     
     def _random_score(self, phonemes: list, real_score: list, rand_factor: float):   

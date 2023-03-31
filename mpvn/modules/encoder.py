@@ -164,7 +164,7 @@ class ConformerEncoder(nn.Module):
     ):
         super(ConformerEncoder, self).__init__()
         self.joint_ctc_attention = joint_ctc_attention
-        self.conv_subsample = Conv2dSubampling(in_channels=1, out_channels=encoder_dim)
+        self.conv_subsample = Conv2dSubampling(in_channels=1, out_channels=encoder_dim, half_subsampling=half_subsampling)
         self.input_projection = nn.Sequential(
             Linear(
                 encoder_dim * (((input_dim-1)//2) if half_subsampling else (((input_dim-1)//2-1)//2)), 

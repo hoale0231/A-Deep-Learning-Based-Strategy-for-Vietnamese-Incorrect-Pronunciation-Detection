@@ -6,7 +6,7 @@ from typing import Optional, Any, Tuple
 
 from mpvn.modules.attention import *
 from mpvn.modules.embedding import Embedding, PositionalEncoding
-from mpvn.modules.mask import get_attn_subsequent_mask, get_attn_pad_mask
+from mpvn.modules.mask import *
 from mpvn.modules.modules import Linear, AddNorm, ResidualConnectionModule, View, LayerNorm
 from mpvn.modules.feed_forward import FeedForwardModule
 
@@ -28,16 +28,9 @@ class TransformerDecoderBlock(nn.Module):
             self.feed_forward_residual_factor = 1
         
         self.input_dropout = nn.Dropout(dropout_p)
-        self.pre_feed_forward = ResidualConnectionModule(
-                module=FeedForwardModule(
-                    d_model=hidden_state_dim,
-                    expansion_factor=feed_forward_expansion_factor,
-                    dropout_p=feed_forward_dropout_p,
-                ),
-                module_factor=self.feed_forward_residual_factor,
-            )
+
         self.self_attention = AddNorm(
-            MultiHeadedSelfAttentionMaskedQueryModule(
+            MultiHeadedSelfAttentionModule(
                 hidden_state_dim, 
                 num_heads, 
                 attention_dropout_p
@@ -50,13 +43,12 @@ class TransformerDecoderBlock(nn.Module):
                 attention_dropout_p
                 ), d_model=hidden_state_dim
             )
-        self.post_feed_forward = ResidualConnectionModule(
-                module=FeedForwardModule(
+        self.feed_forward = AddNorm(
+                FeedForwardModule(
                     d_model=hidden_state_dim,
                     expansion_factor=feed_forward_expansion_factor,
                     dropout_p=feed_forward_dropout_p,
-                ),
-                module_factor=self.feed_forward_residual_factor,
+                ), d_model=hidden_state_dim
             )
 
         self.hidden_state_dim = hidden_state_dim
@@ -72,11 +64,10 @@ class TransformerDecoderBlock(nn.Module):
         output_lengths = decoder_inputs.size(1)
         
         outputs = self.input_dropout(decoder_inputs)
-        outputs = self.pre_feed_forward(outputs)
         
-        _, outputs, selfattn = self.self_attention(outputs, self_attn_mask)
+        outputs, _, selfattn = self.self_attention(outputs, self_attn_mask, True)
         context, _, crossattn = self.attention(outputs, encoder_outputs, encoder_outputs, encoder_attn_mask)
-        outputs = self.post_feed_forward(context)
+        outputs, _ = self.feed_forward(context)
 
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
         return outputs, selfattn, crossattn
@@ -118,7 +109,9 @@ class DecoderTransformer(nn.Module):
         
         self.fc = nn.Sequential(
             nn.Linear(hidden_state_dim, hidden_state_dim),
-            nn.Tanh(),
+            nn.ReLU(),
+            nn.Linear(hidden_state_dim, hidden_state_dim),
+            nn.ReLU(),
             View(shape=(-1, hidden_state_dim), contiguous=True),
             nn.Linear(hidden_state_dim, num_classes),
         )
@@ -138,7 +131,7 @@ class DecoderTransformer(nn.Module):
         dec_self_attn_pad_mask = get_attn_pad_mask(
             decoder_inputs, decoder_inputs_lengths, decoder_inputs.size(1)
         )
-        dec_self_attn_subsequent_mask = get_attn_subsequent_mask(decoder_inputs)
+        dec_self_attn_subsequent_mask = get_attn_custom_mask(decoder_inputs)
         self_attn_mask = torch.gt((dec_self_attn_pad_mask + dec_self_attn_subsequent_mask), 0)
 
         encoder_attn_mask = get_attn_pad_mask(
@@ -176,21 +169,23 @@ class DecoderTransformer(nn.Module):
             get_mispronunciation_phone_features: bool = True
     ):
         batch_size = decoder_inputs.size(0)
-
+        decoder_inputs = decoder_inputs[decoder_inputs != self.eos_id].view(batch_size, -1)
         output_lengths = decoder_inputs.size(1)
         
         pos_em = self.positional_encoding(output_lengths)
         embed = self.embedding(decoder_inputs)
         outputs = embed + pos_em
         self_attn_mask, encoder_attn_mask = self.get_mask(decoder_inputs, targets_lengths, encoder_outputs, encoder_output_lengths)
-        
+  
         for layer in self.layers:
             outputs, selfatt, crossattn = layer(outputs, encoder_outputs, self_attn_mask, encoder_attn_mask)
         
         
         if get_mispronunciation_phone_features:
-            mispronunciation_phone_features = torch.cat((embed, outputs), dim=2)
-            mispronunciation_phone_features = self._split_output_to_word(decoder_inputs, mispronunciation_phone_features)
+            mispronunciation_phone_features = torch.cat((embed[:,1:], outputs[:,:-1]), dim=2)
+            mispronunciation_phone_features = self._split_output_to_word(decoder_inputs[:,1:], mispronunciation_phone_features)
+            if mispronunciation_phone_features.shape[1] > 4:
+                print(mispronunciation_phone_features.shape)
         else:
             mispronunciation_phone_features = None
             

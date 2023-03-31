@@ -18,6 +18,7 @@ class RNNDecoder(nn.Module):
             hidden_state_dim: int = 1024,
             eos_id: int = 2,
             space_id: int = 1,
+            pad_id: int = 0,
             num_heads: int = 4,
             num_layers: int = 2,
             rnn_type: str = 'lstm',
@@ -27,6 +28,7 @@ class RNNDecoder(nn.Module):
         self.hidden_state_dim = hidden_state_dim
         self.eos_id = eos_id
         self.space_id = space_id
+        self.pad_id = pad_id
         self.embedding = nn.Embedding(num_classes, hidden_state_dim)
         self.input_dropout = nn.Dropout(dropout_p)
         self.rnn = self.supported_rnns[rnn_type.lower()](
@@ -52,13 +54,13 @@ class RNNDecoder(nn.Module):
         for b in range(len(input)):
             word = []
             for i, o in zip(input[b], output[b]):
-                if i == self.space_id or i == self.eos_id:
+                if i == self.space_id or i == self.pad_id:
                     word_list.append(torch.stack(word))
                     max_len = max(len(word), max_len)
                     word = []
                 else:
                     word.append(o)
-                if i == self.eos_id:
+                if i == self.pad_id:
                     break
             if word:
                 max_len = max(len(word), max_len)
@@ -151,7 +153,8 @@ class WordDecoder(nn.Module):
         inputs = self.ff(inputs)
         inputs = self.input_dropout(inputs)
 
-        output = self.self_attention(inputs)
+        output, attn = self.self_attention(inputs, return_attn=True)
         output, _ = self.rnn(output)
         output = self.fc(output[:,-1,:]).log_softmax(dim=-1)
+
         return output
