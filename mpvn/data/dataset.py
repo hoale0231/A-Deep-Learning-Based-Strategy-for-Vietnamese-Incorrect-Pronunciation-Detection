@@ -60,6 +60,7 @@ class AudioDataset(Dataset):
             utt_id: list,
             audio_paths: list,
             transcripts: list,
+            text_gen: list,
             score: list,
             vocab: Vocabulary,
             phoneme_map: dict,
@@ -95,6 +96,11 @@ class AudioDataset(Dataset):
         self.freq_mask_num = freq_mask_num
         self.n_fft = int(round(sample_rate * 0.001 * frame_length))
         self.hop_length = int(round(sample_rate * 0.001 * frame_shift))
+        
+        if text_gen is None:
+            self.text_gen = [''] * len(self.utt_id)
+        else:
+            self.text_gen = list(text_gen)
 
         if apply_spec_augment:
             for idx in range(self.dataset_size):
@@ -104,6 +110,7 @@ class AudioDataset(Dataset):
                 self.transcripts.append(self.transcripts[idx])
                 self.score.append(self.score[idx])
                 self.auto_gen_score.append(self.auto_gen_score[idx])
+                self.text_gen.append(self.text_gen[idx])
 
         self.vowels = """   a0 a1 a2 a3 a4 a5
                             ă0 ă1 ă2 ă3 ă4 ă5
@@ -264,16 +271,19 @@ class AudioDataset(Dataset):
                 rand_factor = 0.5
             r_c, score = self._random_score(phonemes, score, rand_factor)
         else:
-            r_c = r_o
+            if self.text_gen[idx]:
+                r_c = self._parse_phonemes(self.phone_map[word].replace(' ', '=') for word in self.text_gen[idx].split())
+            else:
+                r_c = r_o
             score = self._parse_score(self.score[idx])
             if len(self.transcripts[idx].split()) != len(score):
                 raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
-        return audio_feature, r_o, r_c, score, self.utt_id[idx], self.score[idx] == ''
+        return audio_feature, r_o, r_c, score, self.utt_id[idx], self.score[idx] == '' or self.text_gen[idx] != ''
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score, self.text_gen))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score, self.text_gen = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)

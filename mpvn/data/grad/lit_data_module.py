@@ -100,11 +100,16 @@ class LightningGradDataModule(pl.LightningDataModule):
         for path, split in zip(self.manifest_paths, splits):
             df = pd.read_csv(path).fillna('')
             utt_id, audio_paths, transcripts, score, gen_score = df.utt_id, df.path, df.text, df.score, df.gen_score
+            if 'text_gen' in df:
+                text_gen = df.text_gen
+            else:
+                text_gen = None
             self.dataset[split] = self.audio_dataset(
                 dataset_path=self.dataset_path,
                 utt_id=utt_id,
                 audio_paths=audio_paths,
                 transcripts=transcripts,
+                text_gen=text_gen,
                 score=score,
                 vocab=self.vocab,
                 phoneme_map=self.phone_map,
