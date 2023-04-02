@@ -18,6 +18,7 @@ class RNNDecoder(nn.Module):
             hidden_state_dim: int = 1024,
             eos_id: int = 2,
             space_id: int = 1,
+            pad_id: int = 0,
             num_heads: int = 4,
             num_layers: int = 2,
             rnn_type: str = 'lstm',
@@ -27,6 +28,7 @@ class RNNDecoder(nn.Module):
         self.hidden_state_dim = hidden_state_dim
         self.eos_id = eos_id
         self.space_id = space_id
+        self.pad_id = pad_id
         self.embedding = nn.Embedding(num_classes, hidden_state_dim)
         self.input_dropout = nn.Dropout(dropout_p)
         self.rnn = self.supported_rnns[rnn_type.lower()](
@@ -52,13 +54,13 @@ class RNNDecoder(nn.Module):
         for b in range(len(input)):
             word = []
             for i, o in zip(input[b], output[b]):
-                if i == self.space_id or i == self.eos_id:
+                if i == self.space_id or i == self.pad_id:
                     word_list.append(torch.stack(word))
                     max_len = max(len(word), max_len)
                     word = []
                 else:
                     word.append(o)
-                if i == self.eos_id:
+                if i == self.pad_id:
                     break
             if word:
                 max_len = max(len(word), max_len)
@@ -76,7 +78,8 @@ class RNNDecoder(nn.Module):
     def forward(
             self,
             targets: Optional[Tensor] = None,
-            encoder_outputs: Tensor = None
+            encoder_outputs: Tensor = None,
+            get_mispronunciation_phone_features: bool = True
     ) -> Tensor:
         batch_size = targets.size(0)
         input_rnn = targets[targets != self.eos_id].view(batch_size, -1)
@@ -97,12 +100,16 @@ class RNNDecoder(nn.Module):
         # Create phoneme-level mispronunciation features 
         # by concat cannonical phonemes and context vector,
         # but with shift and remove <sos>, <eos> items
-        mispronunciation_phone_features = torch.cat((embedded[:,1:], context[:,:-1]), dim=2)
-        mispronunciation_phone_features = self._split_output_to_word(input_rnn[:,1:], mispronunciation_phone_features)
+        if get_mispronunciation_phone_features:
+            mispronunciation_phone_features = torch.cat((embedded[:,1:], context[:,:-1]), dim=2)
+            mispronunciation_phone_features = self._split_output_to_word(input_rnn[:,1:], mispronunciation_phone_features)
+        else:
+            mispronunciation_phone_features = None
+            
         outputs = torch.cat((outputs, context), dim=2)
-        outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
+        outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)
+                    
         outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-        
         return outputs, attn, mispronunciation_phone_features
 
 class WordDecoder(nn.Module):
@@ -146,7 +153,8 @@ class WordDecoder(nn.Module):
         inputs = self.ff(inputs)
         inputs = self.input_dropout(inputs)
 
-        output = self.self_attention(inputs)
+        output, attn = self.self_attention(inputs, return_attn=True)
         output, _ = self.rnn(output)
         output = self.fc(output[:,-1,:]).log_softmax(dim=-1)
+
         return output

@@ -42,10 +42,37 @@ def get_attn_pad_mask(inputs, input_lengths, expand_length):
 
 def get_attn_subsequent_mask(seq):
     assert seq.dim() == 2
-    attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
-    subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1)
+    
+    subsequent_mask = torch.eye(seq.size(1)).repeat(seq.size(0), 1 ,1)
 
     if seq.is_cuda:
         subsequent_mask = subsequent_mask.cuda()
 
+    return subsequent_mask
+
+
+def get_attn_triu_mask(seq):
+    assert seq.dim() == 2
+    attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
+    subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1)
+    if seq.is_cuda:
+        subsequent_mask = subsequent_mask.cuda()
+    return subsequent_mask
+
+
+def get_attn_eys_shilf_mask(seq):
+    assert seq.dim() == 2
+    subsequent_mask = torch.roll(torch.eye(seq.size(1)),shifts=1,dims=1).repeat(seq.size(0), 1 ,1)
+    if seq.is_cuda:
+        subsequent_mask = subsequent_mask.cuda()
+    return subsequent_mask
+
+def get_attn_custom_mask(seq):
+    assert seq.dim() == 2
+    attn_shape = [seq.size(0), seq.size(1), seq.size(1)]
+    subsequent_mask = (torch.tril(torch.ones(attn_shape), diagonal=-2) 
+                       + torch.triu(torch.ones(attn_shape), diagonal=4) 
+                       + torch.roll(torch.eye(seq.size(1)),shifts=1,dims=1))
+    if seq.is_cuda:
+        subsequent_mask = subsequent_mask.cuda()
     return subsequent_mask

@@ -23,6 +23,7 @@
 import os
 import random
 import librosa
+import soundfile as sf
 import torch
 import torchaudio
 import numpy as np
@@ -56,13 +57,14 @@ class AudioDataset(Dataset):
     def __init__(
             self,
             dataset_path: str,
-            utt_id: str,
+            utt_id: list,
             audio_paths: list,
             transcripts: list,
+            text_gen: list,
             score: list,
             vocab: Vocabulary,
             phoneme_map: dict,
-            auto_gen_score: bool = True,
+            auto_gen_score: list,
             apply_spec_augment: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
@@ -94,6 +96,11 @@ class AudioDataset(Dataset):
         self.freq_mask_num = freq_mask_num
         self.n_fft = int(round(sample_rate * 0.001 * frame_length))
         self.hop_length = int(round(sample_rate * 0.001 * frame_shift))
+        
+        if text_gen is None:
+            self.text_gen = [''] * len(self.utt_id)
+        else:
+            self.text_gen = list(text_gen)
 
         if apply_spec_augment:
             for idx in range(self.dataset_size):
@@ -103,25 +110,30 @@ class AudioDataset(Dataset):
                 self.transcripts.append(self.transcripts[idx])
                 self.score.append(self.score[idx])
                 self.auto_gen_score.append(self.auto_gen_score[idx])
+                self.text_gen.append(self.text_gen[idx])
 
-        self.vowels = """   iə iə2 iəɜ iə4 iə5 iə6
-                            iɛ iɛ1 iɛ2 iɛɜ iɛ4 iɛ5 iɛ6
-                            i i2 iɜ i4 i5 i6
-                            e e1 e2 eɜ e4 e5 e6 e7
-                            ɛ ɛ2 ɛɜ ɛ4 ɛ5 ɛ6
-                            yə yə2 yəɜ yə4 yə5 yə6
-                            y y2 yɜ y4 y5 y6
-                            əː əː2 əːɜ əː4 əː5 əː6
-                            ə ə1 ə2 əɜ ə4 ə5 ə6
-                            aː aː2 aːɜ aː4 aː5 aː6
-                            a a2 aɜ a4 a5 a6
-                            uə uə2 uəɜ uə4 uə5 uə6
-                            u u2 uɜ u4 u5 u6
-                            o o2 oɜ o4 o5 o6
-                            ɔ ɔ2 ɔɜ ɔ4 ɔ5 ɔ6
-                            əɪ əɪ2 əɪɜ əɪ4 əɪ5 əɪ6""".split()
-        self.init_consonants = "b ɗ d f ɣ h k x l m n ɲ ŋ p s t̪ t tʃ v z".split()
-        self.final_consonants = "j m n ɲ ŋ p k t̪ w c".split()
+        self.vowels = """   a0 a1 a2 a3 a4 a5
+                            ă0 ă1 ă2 ă3 ă4 ă5
+                            â0 â1 â2 â3 â4 â5
+                            ax0 ax1 ax2 ax3 ax4 ax5
+                            e0 e1 e2 e3 e4 e5
+                            ê0 ê1 ê2 ê3 ê4 ê5
+                            i0 i1 i2 i3 i4 i5
+                            iê0 iê1 iê2 iê3 iê4 iê5
+                            o0 o1 o2 o3 o4 o5
+                            ô0 ô1 ô2 ô3 ô4 ô5
+                            ơ0 ơ1 ơ2 ơ3 ơ4 ơ5
+                            u0 u1 u2 u3 u4 u5
+                            ư0 ư1 ư2 ư3 ư4 ư5
+                            ưa0 ưa1 ưa2 ưa3 ưa4 ưa5""".split() + ['']
+        self.init_vowels = ["w", ""]
+        self.init_consonants = "b m v n đ t l s d r k h p g th ph tr ch nh kh ng".split() + ['']
+        self.final_consonants = "-p -t -k -m -n -i -w -k -ng".split() + ['']
+        self.set_phones = { phones for phones in self.phone_map.values()}
+        
+        self.set_vowels = set(self.vowels)
+        self.set_init_consonants = set(self.init_consonants)
+        self.set_final_consonants = set(self.final_consonants)
         
         self.shuffle()
 
@@ -171,7 +183,11 @@ class AudioDataset(Dataset):
         Returns:
             feature (np.ndarray): feature extract by sub-class
         """
-        signal, sr = librosa.load(audio_path, sr=self.sample_rate)
+        signal, sr = sf.read(audio_path)
+        if sr != 16000:
+            print(audio_path, file=open('file_invalid_sample_rate.txt', 'a'))
+            signal = librosa.resample(signal, orig_sr=sr, target_sr=16000)
+    
         feature = self._get_feature(signal)
 
         feature -= feature.mean()
@@ -184,50 +200,53 @@ class AudioDataset(Dataset):
 
         return feature
 
-    def _parse_phonemes(self, transcript: str) -> list:
+    def _parse_phonemes(self, phonemes: list) -> list:
         """
-        Convert transcript to list phonemes and add <sos> and <eos> tokens
+        Convert transcript to list phonemes id and add <sos> and <eos> tokens
         """
-        words = transcript.split()
-        phonemes = [self.phone_map[word].replace(' ', '-') for word in words]
         return [self.sos_id] + self.vocab.string_to_label(' '.join(phonemes)) + [self.eos_id]
     
-    def _random_score(self, transcript: str):
-        def _random_replace(phones: str):
-            phones = phones.split('-')
-            new_phones = []
-            for i, p in enumerate(phones):
-                p_ = p
-                if np.random.rand() < 0.5:
-                    if i == 0:
-                        if p in self.init_consonants:
-                            p_ = np.random.choice(tuple(set(self.init_consonants) - {p}))
-                        elif p in self.vowels:
-                            p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-                    elif i == len(phones) - 2:
-                        if p in self.vowels:
-                            p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-                    elif i == len(phones) - 1:
-                        if p in self.final_consonants:
-                            p_ = np.random.choice(tuple(set(self.final_consonants) - {p}))
-                        elif p in self.vowels:
-                            p_ = np.random.choice(tuple(set(self.vowels) - {p}))
-                new_phones.append(p_)
-            return '-'.join(new_phones)
-        words = transcript.split()
-        phonemes = [self.phone_map[word].replace(' ', '-') for word in words]     
-        replace = np.random.rand(len(phonemes)) < 0.6
-        phonemes_replaced = [_random_replace(p) if r else p for p, r in zip(phonemes, replace)]
-        score = [int(p == p_) for p, p_ in zip(phonemes, phonemes_replaced)]
-        return [self.sos_id] + self.vocab.string_to_label(' '.join(phonemes_replaced)) + [self.eos_id], score
+    def _random_replace(self, phones: str):
+        phones = phones.split('=')
+        init_cons, init_vowels, vowels, final_cons = '', '', '', ''
+        for p in phones:
+            if p in self.set_init_consonants:
+                init_cons = p
+            elif p in self.init_vowels:
+                init_vowels = p
+            elif p in self.set_vowels:
+                vowels = p
+            elif p in self.set_final_consonants:
+                final_cons = p
+              
+        new_phones = []
+        while len(new_phones) == 0 or new_phones == phones or ' '.join(new_phones) not in self.set_phones: 
+            init_cons_ = init_cons
+            init_vowels_ = init_vowels
+            vowels_ = vowels
+            final_cons_ = final_cons
+
+            if np.random.rand() < 0.25:
+                init_cons_ = np.random.choice(self.init_consonants)
+            if np.random.rand() < 0.25:
+                init_vowels_ = np.random.choice(self.init_vowels)
+            if np.random.rand() < 0.25:
+                vowels_ = np.random.choice(self.vowels)
+            if np.random.rand() < 0.25:
+                final_cons_ = np.random.choice(self.final_consonants)
+            new_phones = [p for p in [init_cons_, init_vowels_, vowels_, final_cons_] if p != '']
+            
+        return '='.join(new_phones)
     
-    def _process_transcripts(self, transcript: str) -> list:
-        phns = self._parse_phonemes(transcript)
-        gen_phns, score = self._random_score(transcript)
-        return phns, gen_phns, score
+    
+    def _random_score(self, phonemes: list, real_score: list, rand_factor: float):   
+        replace = np.random.rand(len(phonemes)) < rand_factor
+        phonemes_replaced = [self._random_replace(p) if (r and s) else p for p, r, s in zip(phonemes, replace, real_score)]
+        score = [int(p == p_ and s) for p, p_, s in zip(phonemes, phonemes_replaced, real_score)]
+        return self._parse_phonemes(phonemes_replaced), score
     
     def _parse_score(self, score: str) -> list:
-        return [int(int(s) == 2) for s in score.split()]
+        return [int(s) for s in score.split()]
 
     def __getitem__(self, idx):
         """
@@ -241,19 +260,30 @@ class AudioDataset(Dataset):
         """
         audio_path = os.path.join(self.dataset_path, self.audio_paths[idx])
         audio_feature = self._parse_audio(audio_path, self.spec_augment_flags[idx])
+        phonemes = [self.phone_map[word].replace(' ', '=') for word in self.transcripts[idx].split()]
+        r_o = self._parse_phonemes(phonemes)
         if self.auto_gen_score[idx]:
-            r_o, r_c, score = self._process_transcripts(self.transcripts[idx])
+            if self.score[idx]:
+                score = self._parse_score(self.score[idx])
+                rand_factor = 0.25
+            else:
+                score = [1] * len(phonemes) 
+                rand_factor = 0.5
+            r_c, score = self._random_score(phonemes, score, rand_factor)
         else:
-            r_o = r_c = self._parse_phonemes(self.transcripts[idx])
+            if self.text_gen[idx]:
+                r_c = self._parse_phonemes(self.phone_map[word].replace(' ', '=') for word in self.text_gen[idx].split())
+            else:
+                r_c = r_o
             score = self._parse_score(self.score[idx])
             if len(self.transcripts[idx].split()) != len(score):
                 raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
-        return audio_feature, r_o, r_c, score, self.utt_id[idx]
+        return audio_feature, r_o, r_c, score, self.utt_id[idx], self.score[idx] == '' or self.text_gen[idx] != ''
 
     def shuffle(self):
-        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score))
+        tmp = list(zip(self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score, self.text_gen))
         random.shuffle(tmp)
-        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score = zip(*tmp)
+        self.utt_id, self.audio_paths, self.transcripts, self.spec_augment_flags, self.score, self.auto_gen_score, self.text_gen = zip(*tmp)
 
     def __len__(self):
         return len(self.audio_paths)

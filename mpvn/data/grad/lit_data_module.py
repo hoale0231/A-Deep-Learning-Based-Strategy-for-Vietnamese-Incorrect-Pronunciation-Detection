@@ -48,10 +48,10 @@ class LightningGradDataModule(pl.LightningDataModule):
             f"{configs.dataset_path}/train.csv",
             f"{configs.dataset_path}/dev.csv",
             f"{configs.dataset_path}/test.csv",
-            f"{configs.dataset_path}/label.csv",
-            f"{configs.dataset_path}/train_label.csv",
-            f"{configs.dataset_path}/test_label.csv",
-            f"{configs.dataset_path}/valid_label.csv",
+            f"{configs.dataset_path}/label_train.csv",
+            f"{configs.dataset_path}/label_test.csv",
+            f"{configs.dataset_path}/label_valid.csv",
+            f"{configs.dataset_path}/train_total.csv"
         ]
         self.dataset = dict()
         self.batch_size = configs.batch_size
@@ -65,6 +65,9 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.freq_mask_para = configs.freq_mask_para
         self.time_mask_num = configs.time_mask_num
         self.freq_mask_num = configs.freq_mask_num
+        self.train_set = configs.train_set
+        self.test_set = configs.test_set
+        self.valid_set = configs.valid_set
         self.logger = logging.getLogger(__name__)
 
         if configs.feature_extract_method == 'spectrogram':
@@ -93,15 +96,20 @@ class LightningGradDataModule(pl.LightningDataModule):
         if not self.vocab:
             self.vocab = GradVocabulary(f"{self.dataset_path}/token.txt")
         
-        splits = ['train', 'dev', 'test', 'label', 'train_label', 'test_label', 'valid_label']
+        splits = ['train', 'dev', 'test', 'label_train', 'label_test', 'label_valid', 'train_total']
         for path, split in zip(self.manifest_paths, splits):
-            df = pd.read_csv(path)
+            df = pd.read_csv(path).fillna('')
             utt_id, audio_paths, transcripts, score, gen_score = df.utt_id, df.path, df.text, df.score, df.gen_score
+            if 'text_gen' in df:
+                text_gen = df.text_gen
+            else:
+                text_gen = None
             self.dataset[split] = self.audio_dataset(
                 dataset_path=self.dataset_path,
                 utt_id=utt_id,
                 audio_paths=audio_paths,
                 transcripts=transcripts,
+                text_gen=text_gen,
                 score=score,
                 vocab=self.vocab,
                 phoneme_map=self.phone_map,
@@ -117,25 +125,25 @@ class LightningGradDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:
-        train_sampler = BucketingSampler(self.dataset['train_label'], batch_size=self.batch_size)
+        train_sampler = BucketingSampler(self.dataset[self.train_set], batch_size=self.batch_size)
         return AudioDataLoader(
-            dataset=self.dataset['train_label'],
+            dataset=self.dataset[self.train_set],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        val_clean_sampler = BucketingSampler(self.dataset['valid_label'], batch_size=1)
+        val_clean_sampler = BucketingSampler(self.dataset[self.valid_set], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test'],
+                dataset=self.dataset[self.valid_set],
                 num_workers=self.num_workers,
                 batch_sampler=val_clean_sampler,
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        test_clean_sampler = BucketingSampler(self.dataset['test_label'], batch_size=1)
+        test_clean_sampler = BucketingSampler(self.dataset[self.test_set], batch_size=1)
         return AudioDataLoader(
-                dataset=self.dataset['test_label'],
+                dataset=self.dataset[self.test_set],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
             )

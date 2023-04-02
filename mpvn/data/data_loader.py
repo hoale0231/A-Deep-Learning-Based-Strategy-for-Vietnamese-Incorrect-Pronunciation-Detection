@@ -23,60 +23,26 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.sampler import Sampler
-
 
 def _collate_fn(batch, pad_id: int = 0):
     """ functions that pad to the maximum sequence length """
-    # sort by sequence length for rnn.pack_padded_sequence()
-    batch = sorted(batch, key=lambda sample: sample[0].size(0), reverse=True)
-
-    input_lengths = [len(s[0]) for s in batch]
-    r_os_lengths = [len(s[1]) - 1 for s in batch]
-
-    max_inputs_sample = max(batch, key=lambda x: len(x[0]))[0]
-    max_r_o_sample = max(batch, key=lambda x: len(x[1]))[1]
-    max_r_c_sample = max(batch, key=lambda x: len(x[2]))[2]
-    # max_score_sample = max(batch, key=lambda x: len(x[3]))[3]
-
-    max_input_length = max_inputs_sample.size(0)
-    max_r_o_length = len(max_r_o_sample)
-    # max_score_length = len(max_score_sample)
-    max_r_c_length = len(max_r_c_sample)
-
-    feat_dim = max_inputs_sample.size(1)
-    batch_size = len(batch)
-
-    inputs = torch.zeros(batch_size, max_input_length, feat_dim)
-
-    r_os = torch.zeros(batch_size, max_r_o_length).to(torch.long)
-    r_os.fill_(pad_id)
+    inputs, r_os, r_cs, scores, utt_ids, is_L1s = zip(*batch)
     
-    r_cs = torch.zeros(batch_size, max_r_c_length).to(torch.long)
-    r_cs.fill_(pad_id)
+    input_lengths = torch.IntTensor([len(s[0]) for s in batch])
+    r_os_lengths = torch.IntTensor([len(s[1])-1 for s in batch])
     
-    # scores = torch.zeros(batch_size, max_score_length).to(torch.long)
-    # scores.fill_(pad_id)
+    r_os = [torch.LongTensor(r_o) for r_o in r_os]
+    r_cs = [torch.LongTensor(r_c) for r_c in r_cs]
     
-    utt_ids = list()
-    scores = []
+    inputs = pad_sequence(inputs, batch_first=True, padding_value=0)
+    r_os = pad_sequence(r_os, batch_first=True, padding_value=pad_id)
+    r_cs = pad_sequence(r_cs, batch_first=True, padding_value=pad_id)
+    scores =  torch.LongTensor(sum(scores, []))
+    L1_list = [idx for idx, is_L1 in enumerate(is_L1s) if is_L1]
 
-    for x in range(batch_size):
-        sample = batch[x]
-        input, r_o, r_c, score, utt_id = sample
-        seq_length = input.size(0)
-        scores += score
-        inputs[x].narrow(0, 0, seq_length).copy_(input)
-        r_os[x].narrow(0, 0, len(r_o)).copy_(torch.LongTensor(r_o))
-        r_cs[x].narrow(0, 0, len(r_c)).copy_(torch.LongTensor(r_c))
-        # scores[x].narrow(0, 0, len(score)).copy_(torch.LongTensor(score))
-        utt_ids.append(utt_id)
- 
-    scores = torch.LongTensor(scores)
-    input_lengths = torch.IntTensor(input_lengths)
-    r_os_lengths = torch.IntTensor(r_os_lengths)
-
-    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids
+    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
 
 
 class AudioDataLoader(DataLoader):

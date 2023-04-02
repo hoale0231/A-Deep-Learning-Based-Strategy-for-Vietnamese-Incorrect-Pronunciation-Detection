@@ -12,7 +12,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 from mpvn.configs import DictConfig
 from mpvn.metric import *
-from mpvn.modules.decoder import RNNDecoder, WordDecoder
+from mpvn.modules.transformer_decoder_autogressive import DecoderTransformer
+from mpvn.modules.decoder import WordDecoder
 from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
@@ -20,7 +21,7 @@ from mpvn.criterion.criterion import JointLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
-class ConformerRNNModel(pl.LightningModule):
+class ConformerTransformerModel(pl.LightningModule):
     def __init__(
             self,
             configs: DictConfig,
@@ -28,7 +29,7 @@ class ConformerRNNModel(pl.LightningModule):
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
-        super(ConformerRNNModel, self).__init__()
+        super(ConformerTransformerModel, self).__init__()
         self.configs = configs
         self.vocab = vocab
         self.per_metric = per_metric
@@ -60,16 +61,19 @@ class ConformerRNNModel(pl.LightningModule):
             half_subsampling=configs.half_subsampling
         )
         
-        self.decoder = RNNDecoder(
+        self.decoder = DecoderTransformer(
             num_classes=num_classes,
             hidden_state_dim=configs.encoder_dim,
             eos_id=self.vocab.eos_id,
+            sos_id=self.vocab.sos_id,
             space_id=self.vocab.space_id,
             pad_id=self.vocab.pad_id,
             num_heads=configs.num_attention_heads,
             dropout_p=configs.decoder_dropout_p,
-            num_layers=configs.num_decoder_layers,
-            rnn_type=configs.rnn_type
+            attention_dropout_p=configs.attention_dropout_p,
+            feed_forward_expansion_factor=configs.feed_forward_expansion_factor,
+            feed_forward_dropout_p=configs.feed_forward_dropout_p,
+            half_step_residual=configs.half_step_residual
         )
         
         self.word_decoder = WordDecoder(
@@ -107,69 +111,82 @@ class ConformerRNNModel(pl.LightningModule):
         if recall != None:
             self.log(f"{stage}_recall", recall*100)
           
-    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list): 
-        # Forward encoder   
-        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
-        
-        # Forward phone decoder
-        train_md = self.configs.md_weight > 0
-        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, train_md)
-        
-        # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
-        if train_md and not torch.equal(r_cs, r_os):
-            _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
-        
-        # Forward word decoder
-        md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
-        
-        if len(L1_list) != len(r_os):
-            encoder_log_probs = encoder_log_probs[L1_list] 
-            encoder_output_lengths = encoder_output_lengths[L1_list]
-            pr_outputs = pr_outputs[L1_list] 
-            r_os = r_os[L1_list]
-            r_os_lengths = r_os_lengths[L1_list] 
-            
-        # Calc loss
-        max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
-        pr_outputs = pr_outputs[:, :max_target_length, :]
-        loss, pr_loss, md_loss = self.criterion(
-            encoder_log_probs=encoder_log_probs.transpose(0, 1),
-            pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
-            encoder_output_lengths=encoder_output_lengths,
-            r_os=r_os[:, 1:],
-            r_os_lengths=r_os_lengths,
-            md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
-            score=scores
-        )
+    def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list): 
+        try:
+            # Forward encoder   
+            encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
 
-        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder
-                
+            # Forward phone decoder
+            train_md = self.configs.md_weight > 0
+            pr_outputs, self_attn_decoder, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(
+                r_os, encoder_outputs, r_os_lengths, encoder_output_lengths, train_md
+            )
+            
+            # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
+            if train_md and not torch.equal(r_cs, r_os):
+                _, self_attn_decoder, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, r_os_lengths, encoder_output_lengths, train_md)
+            
+            # Forward word decoder
+            md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
+            
+            if len(L1_list) != len(r_os):
+                encoder_log_probs = encoder_log_probs[L1_list] 
+                encoder_output_lengths = encoder_output_lengths[L1_list]
+                pr_outputs = pr_outputs[L1_list] 
+                r_os = r_os[L1_list]
+                r_os_lengths = r_os_lengths[L1_list] 
+            
+            # Calc loss
+            max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
+            pr_outputs = pr_outputs[:, :max_target_length, :]
+            loss, pr_loss, md_loss = self.criterion(
+                encoder_log_probs=encoder_log_probs.transpose(0, 1),
+                pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
+                encoder_output_lengths=encoder_output_lengths,
+                r_os=r_os[:, 1:],
+                r_os_lengths=r_os_lengths,
+                md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
+                score=scores
+            )
+        except:
+            print('Error at:', utt_ids)
+            print('r_cs', r_cs)
+            print('score', scores.shape)
+            print('pr outputs', pr_outputs.shape)
+            print('encoder outputs', encoder_log_probs.shape)
+            print('md', md_outputs.shape)
+            exit()
+            
+        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder
+     
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
         return loss
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
+        r_os = r_os[:, 1:]
+        r_cs = r_cs[:, 1:]
         
         y_hats = pr_outputs.max(-1)[1]
         y_hats_encoder = encoder_log_probs.max(-1)[1]
 
         if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
+            per = self.per_metric(r_os, y_hats)
         else:
             per = None
         
         if self.configs.md_weight > 0:
             scores = scores.cpu()
             md_predict = md_outputs.max(-1)[1].cpu()
-  
+            
             acc = accuracy_score(scores, md_predict)
             f1_ = f1_score(scores, md_predict, pos_label=0)
             precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -182,38 +199,43 @@ class ConformerRNNModel(pl.LightningModule):
             if L1_list:
                 print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
-                print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Ro:", r_os.shape, self.vocab.label_to_string(r_os[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+                print("Rc:", r_cs.shape, self.vocab.label_to_string(r_cs[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("Per:", per)
             
             if self.configs.md_weight > 0:
                 print("MED output   :", md_predict)
                 print("Score        :", scores)
                 print("Accuracy:", acc)
-                
-            attn_encoder_decoder = torch.sum(attn_encoder_decoder, dim=0).detach().cpu()
+            attn_encoder_decoder = torch.sum(attn_encoder_decoder.squeeze(), dim=0).detach().cpu()
+            self_attn_decoder = torch.sum(self_attn_decoder.squeeze(), dim=0).detach().cpu()
             print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
+            print("Self-Decoder Attention:", self_attn_decoder.shape)
             plt.imshow(attn_encoder_decoder, interpolation='none')
-            plt.savefig('Data/attention.png')
+            plt.savefig('Data/cross_attention.png')
+            plt.imshow(self_attn_decoder, interpolation='none')
+            plt.savefig('Data/self_attention.png')
 
         self._log_states('valid', loss=loss, per=per, acc=acc, f1=f1_, precision=precision_, recall=recall_)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
-            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, self_attn_decoder, attn_encoder_decoder = self.forward(
+            inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
         )
+        r_os = r_os[:, 1:]
+        r_cs = r_cs[:, 1:]
         
         y_hats = pr_outputs.max(-1)[1]
         if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
+            per = self.per_metric(r_os, y_hats)
         else:
             per = None
         
         md_predict = md_outputs.max(-1)[1].cpu()
         scores = scores.cpu()
-  
+        
         acc = accuracy_score(scores, md_predict)
         f1_ = f1_score(scores, md_predict, pos_label=0)
         precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -227,8 +249,8 @@ class ConformerRNNModel(pl.LightningModule):
             
         self.df.loc[len(self.df)] = [
             utt_ids[0],
-            self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
-            self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(r_os).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.vocab.label_to_string(r_cs).replace('   ', '=').replace(' ', '').replace('=', ' '),
             self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' ') if L1_list else None,
             ' '.join([str(s) for s in scores.cpu().tolist()]),
             ' '.join([str(s) for s in md_outputs.max(-1)[1].cpu().tolist()]),
@@ -302,6 +324,7 @@ class ConformerRNNModel(pl.LightningModule):
             gamma: float = 1.0
     ) -> nn.Module:
         """ Configure criterion """
+        
         return JointLoss(
             ignore_index=ignore_index,
             reduction="mean",

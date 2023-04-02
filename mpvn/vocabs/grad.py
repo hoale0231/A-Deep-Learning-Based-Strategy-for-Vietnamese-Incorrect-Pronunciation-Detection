@@ -34,7 +34,7 @@ class GradVocabulary(Vocabulary):
     def string_to_label(self, text):
         """ Use a phone map and convert phone sequence to an integer sequence """
         if isinstance(text, str):
-            text = text.replace(' ', '- -').split('-')
+            text = text.replace(' ', '= =').split('=')
             # text = list(text)
         if not isinstance(text, list):
             raise Exception("text much be str or list")

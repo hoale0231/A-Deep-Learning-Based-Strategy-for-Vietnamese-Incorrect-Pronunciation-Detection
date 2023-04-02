@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from mpvn.configs import DictConfig
+from mpvn.configs_weakly import DictConfig
 from mpvn.metric import *
 from mpvn.modules.decoder import RNNDecoder, WordDecoder
-from mpvn.modules.encoder import ConformerEncoder
+from mpvn.modules.weakly_s import RCNNMelEncoder, RCNNPhonemeEncoder, DecoderARNN
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion.criterion import JointLoss
@@ -41,35 +41,29 @@ class ConformerRNNModel(pl.LightningModule):
             pr_weight=configs.pr_weight,
             gamma=configs.gamma
         )
-
-        self.encoder = ConformerEncoder(
-            num_classes=num_classes,
+        
+        self.encoder = RCNNMelEncoder(
             input_dim=configs.num_mels,
-            encoder_dim=configs.encoder_dim,
-            num_layers=configs.num_encoder_layers,
-            num_attention_heads=configs.num_attention_heads,
-            feed_forward_expansion_factor=configs.feed_forward_expansion_factor,
-            conv_expansion_factor=configs.conv_expansion_factor,
-            input_dropout_p=configs.input_dropout_p,
-            feed_forward_dropout_p=configs.feed_forward_dropout_p,
-            attention_dropout_p=configs.attention_dropout_p,
-            conv_dropout_p=configs.conv_dropout_p,
-            conv_kernel_size=configs.conv_kernel_size,
-            half_step_residual=configs.half_step_residual,
-            joint_ctc_attention=configs.joint_ctc_attention,
-            half_subsampling=configs.half_subsampling
+            channels=configs.mel_channels,
+            kernel=configs.mel_kernel,
+            padding=configs.mel_padding,
+            stride=configs.mel_stride,
+            dropout_cnn=configs.mel_dropout_cnn,
+            dropout_gru=configs.mel_dropout_gru
         )
         
-        self.decoder = RNNDecoder(
+        self.phoneme_encoder = RCNNPhonemeEncoder(
             num_classes=num_classes,
-            hidden_state_dim=configs.encoder_dim,
-            eos_id=self.vocab.eos_id,
-            space_id=self.vocab.space_id,
-            pad_id=self.vocab.pad_id,
-            num_heads=configs.num_attention_heads,
-            dropout_p=configs.decoder_dropout_p,
-            num_layers=configs.num_decoder_layers,
-            rnn_type=configs.rnn_type
+            channels=configs.phone_channels,
+            kernel=configs.phone_channels,
+            padding=configs.phone_padding,
+            stride=configs.phone_stride,
+            dropout_cnn=configs.phone_dropout_cnn,
+            dropout_gru=configs.phone_dropout_gru            
+        )
+        
+        self.decoder = DecoderARNN(
+            
         )
         
         self.word_decoder = WordDecoder(
@@ -312,3 +306,4 @@ class ConformerRNNModel(pl.LightningModule):
             pr_weight=pr_weight,
             gamma=gamma
         )
+

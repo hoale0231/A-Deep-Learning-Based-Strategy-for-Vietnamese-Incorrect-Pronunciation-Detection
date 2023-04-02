@@ -51,21 +51,23 @@ class DictConfig:
     scheduler: str = "transformer"
 
     # Conformer-Transformer
-    num_encoder_layers: int = 6 
-    encoder_dim: int = 256
-    num_decoder_layers: int = 1
-    num_attention_heads: int = 8
-    feed_forward_expansion_factor: int = 4
-    conv_expansion_factor: int = 2
-    input_dropout_p: float = 0.2
-    feed_forward_dropout_p: float = 0.2
-    attention_dropout_p: float = 0.2
-    conv_dropout_p: float = 0.2
-    decoder_dropout_p: float = 0.2
-    conv_kernel_size: int = 33
-    half_step_residual: bool = True
-    max_length: int = 128
-    teacher_forcing_ratio: float = 1.0
+    mel_channels: int = 16
+    mel_units: int = 128
+    mel_kernel: int = 5
+    mel_padding: int = 2
+    mel_stride: int = 1
+    mel_dropout_cnn: float = 0.045
+    mel_dropout_gru: float = 0.045
+    
+    phone_channels: int = 40
+    phone_units: int = 64
+    phone_kernel: int = 5
+    phone_padding: int = 2
+    phone_stride: int = 1
+    phone_dropout_cnn: float = 0.2
+    phone_dropout_gru: float = 0.2
+    
+    embed_dim: int = 45
     
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
@@ -74,8 +76,8 @@ class DictConfig:
     md_weight: float = 0.0
     pr_weight: float = 1.0
     train_set = 'train'
-    test_set = 'dev'
-    valid_set = 'test'
+    test_set = 'test'
+    valid_set = 'dev'
     warmup_steps: int = 16000
     decay_steps: int = 100000
     
@@ -83,8 +85,8 @@ class DictConfig:
     # md_weight: float = 0.7
     # pr_weight: float = 0.3
     # train_set = 'train'
-    # test_set = 'test'
-    # valid_set = 'dev'
+    # test_set = 'dev'
+    # valid_set = 'test'
     # warmup_steps: int = 16000
     # decay_steps: int = 50000
     
@@ -114,7 +116,7 @@ class DictConfig:
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 8
+    num_workers: int = 4
     batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0

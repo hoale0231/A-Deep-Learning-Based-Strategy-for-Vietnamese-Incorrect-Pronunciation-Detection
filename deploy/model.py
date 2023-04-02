@@ -75,7 +75,7 @@ class ConformerRNNModel(pl.LightningModule):
 
     def parse_transcript(self, transcript: str):
         words = transcript.lower().split()
-        phonemes = [self.phone_map[word].replace(' ', '-') for word in words]
+        phonemes = [self.phone_map[word].replace(' ', '=') for word in words]
         phonemes = [self.vocab.sos_id] + self.vocab.string_to_label(' '.join(phonemes)) + [self.vocab.eos_id]
         return torch.tensor([phonemes])
             

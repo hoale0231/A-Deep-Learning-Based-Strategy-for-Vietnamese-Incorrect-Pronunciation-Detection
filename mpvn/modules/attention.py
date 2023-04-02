@@ -178,7 +178,7 @@ class RelativeMultiHeadAttention(nn.Module):
         self.query_proj = Linear(d_model, d_model)
         self.key_proj = Linear(d_model, d_model)
         self.value_proj = Linear(d_model, d_model)
-        self.pos_proj = Linear(d_model, d_model, bias=False)
+        self.pos_proj = Linear(d_model, d_model)
 
         self.dropout = nn.Dropout(p=dropout_p)
         self.u_bias = nn.Parameter(torch.Tensor(self.num_heads, self.d_head))
@@ -195,6 +195,7 @@ class RelativeMultiHeadAttention(nn.Module):
             value: Tensor,
             pos_embedding: Tensor,
             mask: Optional[Tensor] = None,
+            return_attention: bool = False
     ) -> Tensor:
         batch_size = value.size(0)
 
@@ -218,7 +219,8 @@ class RelativeMultiHeadAttention(nn.Module):
 
         context = torch.matmul(attn, value).transpose(1, 2)
         context = context.contiguous().view(batch_size, -1, self.d_model)
-
+        if return_attention:
+            return self.out_proj(context), attn
         return self.out_proj(context)
 
     def _relative_shift(self, pos_score: Tensor) -> Tensor:
@@ -259,16 +261,92 @@ class MultiHeadedSelfAttentionModule(nn.Module):
         self.attention = RelativeMultiHeadAttention(d_model, num_heads, dropout_p)
         self.dropout = nn.Dropout(p=dropout_p)
 
-    def forward(self, inputs: Tensor, mask: Optional[Tensor] = None):
+    def forward(self, inputs: Tensor, mask: Optional[Tensor] = None, return_attn = False):
         batch_size, seq_length, _ = inputs.size()
         pos_embedding = self.positional_encoding(seq_length)
         pos_embedding = pos_embedding.repeat(batch_size, 1, 1)
 
         inputs = self.layer_norm(inputs)
-        outputs = self.attention(inputs, inputs, inputs, pos_embedding=pos_embedding, mask=mask)
-
+        outputs = self.attention(inputs, inputs, inputs, pos_embedding=pos_embedding, mask=mask, return_attention=return_attn)
+        if return_attn:
+            return self.dropout(outputs[0]), outputs[1]
         return self.dropout(outputs)
+    
+class MultiHeadedSelfAttentionMaskedQueryModule(nn.Module):
+    """
+    Conformer employ multi-headed self-attention (MHSA) while integrating an important technique from Transformer-XL,
+    the relative sinusoidal positional encoding scheme. The relative positional encoding allows the self-attention
+    module to generalize better on different input length and the resulting encoder is more robust to the variance of
+    the utterance length. Conformer use prenorm residual units with dropout which helps training
+    and regularizing deeper models.
 
+    Args:
+        d_model (int): The dimension of model
+        num_heads (int): The number of attention heads.
+        dropout_p (float): probability of dropout
+
+    Inputs: inputs, mask
+        - **inputs** (batch, time, dim): Tensor containing input vector
+        - **mask** (batch, 1, time2) or (batch, time1, time2): Tensor containing indices to be masked
+
+    Returns:
+        - **outputs** (batch, time, dim): Tensor produces by relative multi headed self attention module.
+    """
+    def __init__(self, d_model: int, num_heads: int, dropout_p: float = 0.1):
+        super(MultiHeadedSelfAttentionMaskedQueryModule, self).__init__()
+        self.positional_encoding = PositionalEncoding(d_model)
+        self.layer_norm = LayerNorm(d_model)
+        self.attention = MultiHeadAttention(d_model, num_heads)
+        self.dropout = nn.Dropout(p=dropout_p)
+
+    def forward(self, inputs: Tensor, mask: Optional[Tensor] = None):
+        batch_size, seq_length, _ = inputs.size()
+        pos_embedding = self.positional_encoding(seq_length)
+        pos_embedding = pos_embedding.repeat(batch_size, 1, 1)
+        
+        inputs = self.layer_norm(inputs)
+        outputs, attn = self.attention(
+            pos_embedding, inputs, inputs, mask=mask
+        )
+
+        return self.dropout(outputs), attn
+
+class MultiHeadedAttentionModule(nn.Module):
+    """
+    Conformer employ multi-headed self-attention (MHSA) while integrating an important technique from Transformer-XL,
+    the relative sinusoidal positional encoding scheme. The relative positional encoding allows the self-attention
+    module to generalize better on different input length and the resulting encoder is more robust to the variance of
+    the utterance length. Conformer use prenorm residual units with dropout which helps training
+    and regularizing deeper models.
+
+    Args:
+        d_model (int): The dimension of model
+        num_heads (int): The number of attention heads.
+        dropout_p (float): probability of dropout
+
+    Inputs: inputs, mask
+        - **inputs** (batch, time, dim): Tensor containing input vector
+        - **mask** (batch, 1, time2) or (batch, time1, time2): Tensor containing indices to be masked
+
+    Returns:
+        - **outputs** (batch, time, dim): Tensor produces by relative multi headed self attention module.
+    """
+    def __init__(self, d_model: int, num_heads: int, dropout_p: float = 0.1):
+        super(MultiHeadedAttentionModule, self).__init__()
+        self.positional_encoding = PositionalEncoding(d_model)
+        # self.layer_norm = LayerNorm(d_model)
+        self.attention = RelativeMultiHeadAttention(d_model, num_heads, dropout_p)
+        self.dropout = nn.Dropout(p=dropout_p)
+
+    def forward(self, query: Tensor, key: Tensor, value: Tensor, mask: Optional[Tensor] = None):
+        batch_size, seq_length, _ = key.size()
+        pos_embedding = self.positional_encoding(seq_length)
+        pos_embedding = pos_embedding.repeat(batch_size, 1, 1)
+
+        # inputs = self.layer_norm(inputs)
+        outputs, attn = self.attention(query, key, value, pos_embedding=pos_embedding, mask=mask, return_attention=True)
+
+        return self.dropout(outputs), attn
 
 class MultiHeadLocationAwareAttention(nn.Module):
     """
@@ -332,3 +410,57 @@ class MultiHeadLocationAwareAttention(nn.Module):
 
         return context, attn
 
+class LocationAwareAttention(nn.Module):
+    """
+    Applies a location-aware attention mechanism on the output features from the decoder.
+    Location-aware attention proposed in "Attention-Based Models for Speech Recognition" paper.
+    The location-aware attention mechanism is performing well in speech recognition tasks.
+    We refer to implementation of ClovaCall Attention style.
+    Args:
+        hidden_dim (int): dimesion of hidden state vector
+        smoothing (bool): flag indication whether to use smoothing or not.
+    Inputs: query, value, last_attn, smoothing
+        - **query** (batch, q_len, hidden_dim): tensor containing the output features from the decoder.
+        - **value** (batch, v_len, hidden_dim): tensor containing features of the encoded input sequence.
+        - **last_attn** (batch_size * num_heads, v_len): tensor containing previous timestep`s attention (alignment)
+    Returns: output, attn
+        - **output** (batch, output_len, dimensions): tensor containing the feature from encoder outputs
+        - **attn** (batch * num_heads, v_len): tensor containing the attention (alignment) from the encoder outputs.
+    Reference:
+        - **Attention-Based Models for Speech Recognition**: https://arxiv.org/abs/1506.07503
+        - **ClovaCall**: https://github.com/clovaai/ClovaCall/blob/master/las.pytorch/models/attention.py
+    """
+    def __init__(self, mel_dim: int, phone_dim: int, hidden_dim: int, smoothing: bool = True) -> None:
+        super(LocationAwareAttention, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.conv1d = nn.Conv1d(in_channels=1, out_channels=hidden_dim, kernel_size=3, padding=1)
+        self.query_proj = nn.Linear(mel_dim, hidden_dim, bias=False)
+        self.value_proj = nn.Linear(phone_dim, hidden_dim, bias=False)
+        self.score_proj = nn.Linear(hidden_dim, 1, bias=True)
+        self.bias = nn.Parameter(torch.rand(hidden_dim).uniform_(-0.1, 0.1))
+        self.smoothing = smoothing
+
+    def forward(self, query: Tensor, value: Tensor, last_attn: Tensor) -> Tuple[Tensor, Tensor]:
+        batch_size, hidden_dim, seq_len = query.size(0), query.size(2), value.size(1)
+
+        # Initialize previous attention (alignment) to zeros
+        if last_attn is None:
+            last_attn = value.new_zeros(batch_size, seq_len)
+
+        conv_attn = torch.transpose(self.conv1d(last_attn.unsqueeze(1)), 1, 2)
+        score = self.score_proj(torch.tanh(
+                self.query_proj(query.reshape(-1, hidden_dim)).view(batch_size, -1, hidden_dim)
+                + self.value_proj(value.reshape(-1, hidden_dim)).view(batch_size, -1, hidden_dim)
+                + conv_attn
+                + self.bias
+        )).squeeze(dim=-1)
+
+        if self.smoothing:
+            score = torch.sigmoid(score)
+            attn = torch.div(score, score.sum(dim=-1).unsqueeze(dim=-1))
+        else:
+            attn = F.softmax(score, dim=-1)
+
+        context = torch.bmm(attn.unsqueeze(dim=1), value).squeeze(dim=1)  # Bx1xT X BxTxD => Bx1xD => BxD
+
+        return context, attn
