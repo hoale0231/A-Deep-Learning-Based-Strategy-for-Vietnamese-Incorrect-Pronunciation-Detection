@@ -116,7 +116,7 @@ class ConformerRNNModelLocation(pl.LightningModule):
           
     def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list): 
         # Forward encoder
-        encoder_log_probs, encoder_outputs = self.encoder(inputs)
+        encoder_log_probs, encoder_outputs, output_lengths = self.encoder(inputs, input_lengths)
 
         # Forward phone decoder
         train_md = self.configs.md_weight > 0
@@ -140,7 +140,7 @@ class ConformerRNNModelLocation(pl.LightningModule):
         loss, pr_loss, md_loss = self.criterion(
             encoder_log_probs=encoder_log_probs.transpose(0, 1),
             pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
-            encoder_output_lengths=input_lengths,
+            encoder_output_lengths=output_lengths,
             r_os=r_os[:, 1:],
             r_os_lengths=r_os_lengths,
             md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,

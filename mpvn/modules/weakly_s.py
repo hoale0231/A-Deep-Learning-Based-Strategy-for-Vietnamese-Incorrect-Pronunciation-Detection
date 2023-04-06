@@ -127,11 +127,11 @@ class RCNNMelEncoder(nn.Module):
     ):
         super(RCNNMelEncoder, self).__init__()
         self.cnns = nn.Sequential(
-            CNNEncoder(in_channels=1, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
+            CNNEncoder(in_channels=1, out_channels=channels, kernel=kernel, padding=padding, stride=2, dropout=dropout_cnn),
             CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
             CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn)
         )
-        self.input_projection = nn.Linear(input_dim * channels, units)
+        self.input_projection = nn.Linear((input_dim//2)  * channels, units)
         self.gru = nn.GRU(
             input_size=units,
             hidden_size=units,
@@ -149,7 +149,7 @@ class RCNNMelEncoder(nn.Module):
                 Linear(units, num_classes, bias=False),
             )
 
-    def forward(self, inputs: Tensor):
+    def forward(self, inputs: Tensor, input_lengths: Tensor):
         outputs = self.cnns(inputs.unsqueeze(1))
         batch_size, channels, seq_lengths, seq_dim = outputs.size()
         outputs = outputs.transpose(1, 2)
@@ -158,7 +158,8 @@ class RCNNMelEncoder(nn.Module):
         outputs, hidden = self.gru(outputs)
         if self.joint_ctc_attention:
             encoder_log_probs = self.fc(outputs.transpose(1, 2)).log_softmax(dim=2)
-        return encoder_log_probs, outputs
+        output_lengths = (input_lengths - 1) >> 1
+        return encoder_log_probs, outputs, output_lengths
 
 class RCNNPhonemeEncoder(nn.Module):
     def __init__(

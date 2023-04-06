@@ -51,15 +51,15 @@ class DictConfig:
     scheduler: str = "transformer"
 
     # Conformer-Transformer
-    mel_channels: int = 128
-    mel_units: int = 256
+    mel_channels: int = 96
+    mel_units: int = 192
     mel_kernel: int = 5
     mel_padding: int = 2
     mel_stride: int = 1
     mel_dropout_cnn: float = 0.045
     mel_dropout_gru: float = 0.045
     
-    phone_channels: int = 128
+    phone_channels: int = 64
     phone_units: int = 128
     phone_kernel: int = 5
     phone_padding: int = 2
@@ -121,9 +121,9 @@ class DictConfig:
     # BaseTrainer
     seed: int = 1
     accelerator: str = "cuda"
-    accumulate_grad_batches: int = 8
-    num_workers: int = 4
-    batch_size: int = 4
+    accumulate_grad_batches: int = 4
+    num_workers: int = 16
+    batch_size: int = 16
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     max_epochs: int = 50
