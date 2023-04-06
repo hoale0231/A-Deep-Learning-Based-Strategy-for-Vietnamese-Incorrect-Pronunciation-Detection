@@ -128,10 +128,10 @@ class RCNNMelEncoder(nn.Module):
         super(RCNNMelEncoder, self).__init__()
         self.cnns = nn.Sequential(
             CNNEncoder(in_channels=1, out_channels=channels, kernel=kernel, padding=padding, stride=2, dropout=dropout_cnn),
-            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
+            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=2, dropout=dropout_cnn),
             CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn)
         )
-        self.input_projection = nn.Linear((input_dim//2)  * channels, units)
+        self.input_projection = nn.Linear((input_dim >> 2)  * channels, units)
         self.gru = nn.GRU(
             input_size=units,
             hidden_size=units,
@@ -158,7 +158,7 @@ class RCNNMelEncoder(nn.Module):
         outputs, hidden = self.gru(outputs)
         if self.joint_ctc_attention:
             encoder_log_probs = self.fc(outputs.transpose(1, 2)).log_softmax(dim=2)
-        output_lengths = (input_lengths - 1) >> 1
+        output_lengths = input_lengths >> 2
         return encoder_log_probs, outputs, output_lengths
 
 class RCNNPhonemeEncoder(nn.Module):

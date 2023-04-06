@@ -122,8 +122,8 @@ class DictConfig:
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 16
-    batch_size: int = 16
+    num_workers: int = 8
+    batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     max_epochs: int = 50
