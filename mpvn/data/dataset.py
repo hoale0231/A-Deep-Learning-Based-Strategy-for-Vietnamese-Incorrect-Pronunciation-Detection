@@ -276,8 +276,8 @@ class AudioDataset(Dataset):
             else:
                 r_c = r_o
             score = self._parse_score(self.score[idx])
-            if len(self.transcripts[idx].split()) != len(score):
-                raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
+            # if len(self.transcripts[idx].split()) != len(score):
+            #     raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
         return audio_feature, r_o, r_c, score, self.utt_id[idx], self.score[idx] == '' or self.text_gen[idx] != ''
 
     def shuffle(self):

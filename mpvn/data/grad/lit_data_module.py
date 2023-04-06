@@ -68,6 +68,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.train_set = configs.train_set
         self.test_set = configs.test_set
         self.valid_set = configs.valid_set
+        self.is_weakly_s = configs.is_weakly_s
         self.logger = logging.getLogger(__name__)
 
         if configs.feature_extract_method == 'spectrogram':
@@ -130,6 +131,7 @@ class LightningGradDataModule(pl.LightningDataModule):
             dataset=self.dataset[self.train_set],
             num_workers=self.num_workers,
             batch_sampler=train_sampler,
+            is_weakly_s=self.is_weakly_s
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
@@ -138,6 +140,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 dataset=self.dataset[self.valid_set],
                 num_workers=self.num_workers,
                 batch_sampler=val_clean_sampler,
+                is_weakly_s=self.is_weakly_s
             )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
@@ -146,4 +149,5 @@ class LightningGradDataModule(pl.LightningDataModule):
                 dataset=self.dataset[self.test_set],
                 num_workers=self.num_workers,
                 batch_sampler=test_clean_sampler,
+                is_weakly_s=self.is_weakly_s
             )

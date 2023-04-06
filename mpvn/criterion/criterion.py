@@ -59,7 +59,6 @@ class FocalLoss(nn.Module):
         else:
             return focal_loss
 
-
 class JointCTCCrossEntropyLoss(nn.Module):
     """
     Privides Joint CTC-CrossEntropy Loss function
@@ -142,5 +141,33 @@ class JointLoss(nn.Module):
             encoder_log_probs, pr_log_probs, 
             encoder_output_lengths, r_os, r_os_lengths
         ) if self.pr_weight > 0 and len(r_os) != 0 else 0
+        loss = md_loss * self.md_weight + pr_loss * self.pr_weight
+        return loss, pr_loss, md_loss
+
+class WeaklyLoss(nn.Module):
+    def __init__(
+            self,
+            ignore_index: int,
+            reduction='mean',
+            md_weight: float = 0.7,
+            pr_weight: float = 0.3,
+            gamma: float = 1.0
+    ) -> None:
+        super(WeaklyLoss, self).__init__()
+        self.pr_loss = nn.CrossEntropyLoss(reduction=reduction, ignore_index=ignore_index)
+        self.md_loss = FocalLoss(reduction=reduction, gamma=gamma)
+        # self.md_loss = CrossEntropyLoss(reduction=reduction)
+        self.md_weight = md_weight
+        self.pr_weight = pr_weight
+
+    def forward(
+            self,
+            pr_log_probs: Tensor,
+            r_os: Tensor,
+            md_log_probs: Tensor,
+            score: Tensor
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        md_loss = self.md_loss(md_log_probs, score) if self.md_weight > 0 else 0
+        pr_loss = self.pr_loss(pr_log_probs, r_os.contiguous().view(-1)) if self.pr_weight > 0 and len(r_os) != 0 else 0
         loss = md_loss * self.md_weight + pr_loss * self.pr_weight
         return loss, pr_loss, md_loss

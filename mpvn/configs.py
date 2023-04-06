@@ -71,22 +71,22 @@ class DictConfig:
     ctc_weight: float = 0.5
     
     # stage 0
-    md_weight: float = 0.0
-    pr_weight: float = 1.0
+    # md_weight: float = 0.0
+    # pr_weight: float = 1.0
+    # train_set = 'train'
+    # test_set = 'test'
+    # valid_set = 'test'
+    # warmup_steps: int = 16000
+    # decay_steps: int = 100000
+    
+    # stage 1
+    md_weight: float = 0.9
+    pr_weight: float = 0.1
     train_set = 'train'
     test_set = 'dev'
     valid_set = 'test'
     warmup_steps: int = 16000
-    decay_steps: int = 100000
-    
-    # stage 1
-    # md_weight: float = 0.7
-    # pr_weight: float = 0.3
-    # train_set = 'train'
-    # test_set = 'test'
-    # valid_set = 'dev'
-    # warmup_steps: int = 16000
-    # decay_steps: int = 50000
+    decay_steps: int = 50000
     
     # combine L1 & L2
     # md_weight: float = 0.7
@@ -109,7 +109,8 @@ class DictConfig:
     rnn_type: str = "gru"
     optimizer: str = "adam"
     half_subsampling: bool = False
-
+    is_weakly_s: bool = False
+    
     # BaseTrainer
     seed: int = 1
     accelerator: str = "cuda"

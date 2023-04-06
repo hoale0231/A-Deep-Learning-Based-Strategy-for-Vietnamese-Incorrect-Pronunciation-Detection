@@ -3,8 +3,90 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Optional, Tuple
 from mpvn.modules.attention import LocationAwareAttention
-from mpvn.modules.modules import View
-import random
+from mpvn.modules.modules import View, Transpose, Linear
+import torch.nn.functional as F
+
+
+class ARNNDecoder(nn.Module):
+    def __init__(self, vocab_size, max_len, hidden_size, encoder_size, attention_dim,
+                 sos_id, eos_id,
+                 n_layers=1, rnn_cell='gru', 
+                 bidirectional_encoder=False, bidirectional_decoder=False,
+                 dropout_p=0):
+        super(ARNNDecoder, self).__init__()
+        
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.bidirectional_encoder = bidirectional_encoder
+        self.bidirectional_decoder = bidirectional_decoder
+        self.encoder_output_size = encoder_size * 2 if self.bidirectional_encoder else encoder_size
+        self.n_layers = n_layers
+        self.dropout_p = dropout_p
+        self.max_length = max_len
+        self.eos_id = eos_id
+        self.sos_id = sos_id
+        
+        if rnn_cell.lower() == 'lstm':
+            self.rnn_cell = nn.LSTM
+        elif rnn_cell.lower() == 'gru':
+            self.rnn_cell = nn.GRU
+        else:
+            raise ValueError("Unsupported RNN Cell: {0}".format(rnn_cell))
+
+        self.init_input = None
+        self.rnn = self.rnn_cell(self.hidden_size + self.encoder_output_size, self.hidden_size, self.n_layers,
+                                 batch_first=True, dropout=dropout_p, bidirectional=self.bidirectional_decoder)
+
+        self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
+        self.input_dropout = nn.Dropout(self.dropout_p)
+        
+        self.attention = LocationAwareAttention(dec_dim=self.hidden_size, enc_dim=self.encoder_output_size, attn_dim=attention_dim)
+        self.fc = nn.Linear(self.hidden_size + self.encoder_output_size, self.vocab_size)
+
+    def forward(self, inputs=None, encoder_outputs=None):
+        """
+        param:inputs: Decoder inputs sequence, Shape=(B, dec_T)
+        param:encoder_outputs: Encoder outputs, Shape=(B,enc_T,enc_D)
+        """
+        batch_size = encoder_outputs.size(0)
+
+        context = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(2)) # (B, D)
+        attn_w = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(1)) # (B, T)
+        hidden = None
+        
+        decoder_input = inputs[inputs != self.eos_id].view(batch_size, -1)
+        
+        embedded = self.embedding(decoder_input) # (B, dec_T, voc_D) -> (B, dec_T, dec_D)
+        embedded = self.input_dropout(embedded)
+
+        y_all = []
+        attn_w_all = []
+        output_all = []
+        for i in range(embedded.size(1)):
+            embedded_inputs = embedded[:, i, :] # (B, dec_D)
+            
+            rnn_input = torch.cat([embedded_inputs, context], dim=1) # (B, dec_D + enc_D)
+            rnn_input = rnn_input.unsqueeze(1) 
+            output, hidden = self.rnn(rnn_input, hidden) # (B, 1, dec_D)
+
+            context, attn_w = self.attention(output, encoder_outputs, attn_w) # (B, 1, enc_D), (B, enc_T)
+            attn_w_all.append(attn_w)
+            
+            context = context.squeeze(1)
+            output = output.squeeze(1) # (B, 1, dec_D) -> (B, dec_D)
+            context = self.input_dropout(context)
+            output = self.input_dropout(output)
+            output = torch.cat((output, context), dim=1) # (B, dec_D + enc_D)
+            output_all.append(output)
+
+            pred = F.log_softmax(self.fc(output), dim=-1)
+            y_all.append(pred)
+
+        y_all = torch.stack(y_all, dim=1) # (B, dec_T, out_D)
+        attn_w_all = torch.stack(attn_w_all, dim=1) # (B, dec_T, enc_T)
+        output_all = torch.stack(output_all, dim=1) # (B, dec_T, dec_D + enc_D)
+        
+        return y_all, attn_w_all, output_all
 
 
 class CNNEncoder(nn.Module):
@@ -19,33 +101,20 @@ class CNNEncoder(nn.Module):
     ):
         super(CNNEncoder, self).__init__()
         self.sequential = nn.Sequential(
-            nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel, stride=stride, padding=padding),
+            nn.Dropout(p=dropout),
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel, stride=stride, padding=padding),
             nn.ReLU(),
-            nn.BatchNorm1d(out_channels),
-            nn.Dropout(p=dropout)
+            nn.BatchNorm2d(out_channels)
         )
-
+        
     def forward(self, inputs: Tensor):
         return self.sequential(inputs)
 
-class GRUEncoder(nn.Module):
-    def __init__(
-        self,
-        units: int = 128,
-        dropout: float = 0.045
-    ):
-        super(GRUEncoder, self).__init__()
-        self.sequential = nn.Sequential(
-            nn.GRU(input_size=units),
-            nn.Dropout(p=dropout)
-        )
-
-    def forward(self, inputs: Tensor):
-        return self.sequential(inputs)
 
 class RCNNMelEncoder(nn.Module):
     def __init__(
         self,
+        num_classes: int,
         input_dim: int = 80,
         channels: int = 16,
         kernel: int = 5,
@@ -53,18 +122,43 @@ class RCNNMelEncoder(nn.Module):
         stride: int = 1,
         dropout_cnn: float = 0.045,
         units: int = 128,
-        dropout_gru: float = 0.045
+        dropout_gru: float = 0.045,
+        joint_ctc_attention: bool = True
     ):
         super(RCNNMelEncoder, self).__init__()
-        self.sequential = nn.Sequential(
-            CNNEncoder(in_channels=input_dim, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
+        self.cnns = nn.Sequential(
+            CNNEncoder(in_channels=1, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
             CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
-            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
-            GRUEncoder(units=units, dropout=dropout_gru)
+            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn)
         )
+        self.input_projection = nn.Linear(input_dim * channels, units)
+        self.gru = nn.GRU(
+            input_size=units,
+            hidden_size=units,
+            bias=True,
+            batch_first=True,
+            dropout=dropout_gru,
+            bidirectional=False,       
+        )
+        self.joint_ctc_attention = joint_ctc_attention
+        if self.joint_ctc_attention:
+            self.fc = nn.Sequential(
+                nn.BatchNorm1d(units),
+                Transpose(shape=(1, 2)),
+                nn.Dropout(dropout_gru),
+                Linear(units, num_classes, bias=False),
+            )
 
     def forward(self, inputs: Tensor):
-        return self.sequential(inputs)
+        outputs = self.cnns(inputs.unsqueeze(1))
+        batch_size, channels, seq_lengths, seq_dim = outputs.size()
+        outputs = outputs.transpose(1, 2)
+        outputs = outputs.contiguous().view(batch_size, seq_lengths, channels * seq_dim)
+        outputs = self.input_projection(outputs)
+        outputs, hidden = self.gru(outputs)
+        if self.joint_ctc_attention:
+            encoder_log_probs = self.fc(outputs.transpose(1, 2)).log_softmax(dim=2)
+        return encoder_log_probs, outputs
 
 class RCNNPhonemeEncoder(nn.Module):
     def __init__(
@@ -76,21 +170,40 @@ class RCNNPhonemeEncoder(nn.Module):
         stride: int = 1,
         dropout_cnn: float = 0.2,
         units: int = 128,
-        dropout_gru: float = 0.2
+        dropout_gru: float = 0.2,
+        eos_id: float = 3
     ):
         super(RCNNPhonemeEncoder, self).__init__()
-        self.sequential = nn.Sequential(
-            nn.Embedding(num_classes, channels),
-            CNNEncoder(channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
-            CNNEncoder(channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
-            CNNEncoder(channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
-            GRUEncoder(units=units, dropout=dropout_gru)
+        self.eos_id = eos_id
+        self.embedding = nn.Embedding(num_classes, channels)
+        self.cnns = nn.Sequential(
+            CNNEncoder(in_channels=1, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
+            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn),
+            CNNEncoder(in_channels=channels, out_channels=channels, kernel=kernel, padding=padding, stride=stride, dropout=dropout_cnn)
+        )
+        self.input_projection = nn.Linear(channels * channels, units)
+        self.gru = nn.GRU(
+            input_size=units,
+            hidden_size=units,
+            bias=True,
+            batch_first=True,
+            dropout=dropout_gru,
+            bidirectional=False,       
         )
 
     def forward(self, inputs: Tensor):
-        return self.sequential(inputs)
+        batch_size = inputs.size(0)
+        inputs = inputs[inputs != self.eos_id].view(batch_size, -1)
+        outputs = self.embedding(inputs).transpose(1,2)
+        outputs = self.cnns(outputs.unsqueeze(1))
+        batch_size, channels, seq_lengths, seq_dim = outputs.size()
+        outputs = outputs.transpose(1, 2)
+        outputs = outputs.contiguous().view(batch_size, seq_lengths, channels * seq_dim)
+        outputs = self.input_projection(outputs)
+        return self.gru(outputs)[0]
     
-class DecoderARNN(nn.Module):
+
+class WordDecoderARNN(nn.Module):
     """
     Converts higher level features (from encoder) into output utterances
     by specifying a probability distribution over sequences of characters.
@@ -115,80 +228,60 @@ class DecoderARNN(nn.Module):
     def __init__(
             self,
             num_classes: int,
-            max_length: int = 128,
-            mel_dim: int = 128,
-            phone_dim: int = 64,
-            hidden_state_dim: int = 1024,
-            num_heads: int = 4,
+            value_dim: int = 128,
+            attention_dim: int = 10,
+            rnn_dim: int = 64,
             num_layers: int = 2,
             rnn_type: str = 'gru',
             dropout_p: float = 0.3,
-            use_tpu: bool = False,
     ) -> None:
-        super(DecoderARNN, self).__init__()
-        self.hidden_state_dim = hidden_state_dim
-        self.num_classes = num_classes
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.max_length = max_length
-
-        self.use_tpu = use_tpu
-        self.embedding = nn.Embedding(num_classes, hidden_state_dim)
-        self.input_dropout = nn.Dropout(dropout_p)
+        super(WordDecoderARNN, self).__init__()
+        self.hidden_state_dim = (rnn_dim + value_dim) // 2
+        self.attention_dim = attention_dim
         self.rnn = self.supported_rnns[rnn_type.lower()](
-            input_size=hidden_state_dim * 2,
-            hidden_size=hidden_state_dim,
+            input_size=attention_dim,
+            hidden_size=rnn_dim,
             num_layers=num_layers,
             bias=True,
             batch_first=True,
             dropout=dropout_p,
             bidirectional=False,
         )
-        self.attention = LocationAwareAttention(mel_dim=mel_dim, phone_dim=phone_dim, hidden_dim=hidden_state_dim)
+        self.attention = LocationAwareAttention(query_dim=rnn_dim, value_dim=value_dim, hidden_dim=attention_dim)
         self.fc = nn.Sequential(
-            nn.Linear(hidden_state_dim << 1, hidden_state_dim),
+            nn.Linear(self.hidden_state_dim * 2, self.hidden_state_dim),
             nn.ReLU(),
-            nn.Linear(hidden_state_dim, hidden_state_dim),
+            nn.Linear(self.hidden_state_dim, self.hidden_state_dim // 2),
             nn.ReLU(),
-            View(shape=(-1, self.hidden_state_dim), contiguous=True),
-            nn.Linear(hidden_state_dim, num_classes),
+            View(shape=(-1, self.hidden_state_dim // 2), contiguous=True),
+            nn.Linear(self.hidden_state_dim // 2, num_classes),
         )
 
     def forward_step(
             self,
-            input: Tensor,
             hidden_states: Optional[Tensor],
             encoder_outputs: Tensor,
             last_attn: Tensor
     ) -> Tuple[Tensor, Tensor, Tensor]:
-        batch_size, output_lengths = input.size(0), input.size(1)
-
-
-        if torch.cuda.is_available():
-            input = input.cuda()
-
-        embedded = self.embedding(input)
-        embedded = self.input_dropout(embedded)
+        batch_size, output_lengths = encoder_outputs.size(0), 1
 
         if self.training:
             self.rnn.flatten_parameters()
-
-        context, attn = self.attention(embedded, encoder_outputs, last_attn)
-        input = torch.cat((embedded, context), dim=2)
         
         outputs, hidden_states = self.rnn(input, hidden_states)
-        outputs = torch.cat((outputs, context), dim=2)
-        
-        step_outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)
-        step_outputs = step_outputs.view(batch_size, output_lengths, -1).squeeze(1)
 
-        return step_outputs, hidden_states, attn
+        context, attn = self.attention(hidden_states, encoder_outputs, last_attn)
+        outputs = torch.cat((hidden_states, context), dim=2)
+
+        outputs = self.fc(outputs.view(-1, self.hidden_state_dim * 2)).log_softmax(dim=-1)
+        outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
+
+        return outputs, hidden_states, attn
 
     def forward(
             self,
-            targets: Optional[Tensor] = None,
             encoder_outputs: Tensor = None,
-            teacher_forcing_ratio: float = 1.0,
+            targets_max_length: Optional[Tensor] = None
     ) -> Tensor:
         """
         Forward propagate a `encoder_outputs` for training.
@@ -203,90 +296,12 @@ class DecoderARNN(nn.Module):
         hidden_states, attn = None, None
         predicted_log_probs, attns = list(), list()
 
-        targets, batch_size, max_length = self._validate_args(targets, encoder_outputs, teacher_forcing_ratio)
-        use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-
-        targets = targets[targets != self.eos_id].view(batch_size, -1)
-        
-        if use_teacher_forcing:
-            for di in range(max_length):
-                input_rnn = targets[:, di].unsqueeze(1)
-                step_outputs, hidden_states, attn = self.forward_step(input_rnn, hidden_states, encoder_outputs, attn)
-                predicted_log_probs.append(step_outputs)
-                attns.append(attn)
-        else:
-            input_rnn = targets[:, 0].unsqueeze(1)
-
-            for di in range(max_length):
-                step_outputs, hidden_states, attn = self.forward_step(input_rnn, hidden_states, encoder_outputs, attn)
-                predicted_log_probs.append(step_outputs)
-                input_rnn = predicted_log_probs[-1].topk(1)[1]
-
+        for _ in range(targets_max_length):
+            step_outputs, hidden_states, attn = self.forward_step(hidden_states, encoder_outputs, attn)
+            predicted_log_probs.append(step_outputs)
+            attns.append(attn)
+            
         predicted_log_probs = torch.stack(predicted_log_probs, dim=1)
-        attns = torch.stack(attns, dim=1).permute(0,2,1,3).squeeze()
+        attns = torch.stack(attns, dim=1)
+        
         return predicted_log_probs, attns
-
-    def _validate_args(
-            self,
-            targets: Optional[Tensor] = None,
-            encoder_outputs: Tensor = None,
-            teacher_forcing_ratio: float = 1.0,
-    ) -> Tuple[Tensor, int, int]:
-        """ Validate arguments """
-        assert encoder_outputs is not None
-        batch_size = encoder_outputs.size(0)
-
-        if targets is None:  # inference
-            targets = torch.LongTensor([self.sos_id] * batch_size).view(batch_size, 1)
-            max_length = self.max_length
-
-            if torch.cuda.is_available():
-                targets = targets.cuda()
-
-            if teacher_forcing_ratio > 0:
-                raise ValueError("Teacher forcing has to be disabled (set 0) when no targets is provided.")
-
-        else:
-            max_length = targets.size(1) - 1  # minus the start of sequence symbol
-
-        return targets, batch_size, max_length
-
-class WordDecoder(nn.Module):
-    def __init__(
-            self,
-            num_classes: int,
-            num_words: int,
-            hidden_state_dim: int = 1024,
-            num_heads: int = 4,
-            dropout_p: float = 0.3
-    ) -> None:
-        super(WordDecoder, self).__init__()
-        self.hidden_state_dim = hidden_state_dim
-        self.embedding = nn.Embedding(num_words, hidden_state_dim)
-        self.input_dropout = nn.Dropout(dropout_p)
-        self.attention = MultiHeadAttention(hidden_state_dim, num_heads=num_heads)
-        self.ff = nn.Linear(hidden_state_dim * 2, hidden_state_dim)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_state_dim * 2, hidden_state_dim),
-            nn.Tanh(),
-            View(shape=(-1, self.hidden_state_dim), contiguous=True),
-            nn.Linear(hidden_state_dim, num_classes),
-        )
-    def forward(
-            self,
-            words: Optional[Tensor] = None,
-            encoder_outputs: Tensor = None
-    ) -> Tensor:
-        batch_size, output_lengths = words.size(0), words.size(1)
-        embedded = self.embedding(words)
-        embedded = self.input_dropout(embedded)
-        encoder_outputs = self.ff(encoder_outputs)
-        context, attn = self.attention(embedded, encoder_outputs, encoder_outputs)
-
-        outputs = torch.cat((embedded, context), dim=2)
-
-        outputs = self.fc(outputs.view(-1, self.hidden_state_dim << 1)).log_softmax(dim=-1)             
-        outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-
-        return outputs, attn
-    
