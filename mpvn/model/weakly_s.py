@@ -12,8 +12,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 from mpvn.configs_weakly import DictConfig
 from mpvn.metric import *
-from mpvn.modules.weakly_s import ARNNDecoder, RCNNMelEncoder, RCNNPhonemeEncoder
-from mpvn.modules.decoder import WordDecoder
+from mpvn.modules.weakly_s import ARNNDecoder, RCNNMelEncoder, RCNNPhonemeEncoder, WordDecoderARNN
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion.criterion import JointLoss
@@ -79,11 +78,14 @@ class ConformerRNNModelLocation(pl.LightningModule):
             dropout_p=configs.decoder_dropout_p
         )
         
-        self.word_decoder = WordDecoder(
-            num_classes=2,
-            hidden_state_dim=configs.decoder_units,
-            num_heads=configs.num_attention_heads,
-            dropout_p=configs.decoder_dropout_p,
+        self.word_decoder = WordDecoderARNN(
+            output_size=2,
+            hidden_size=configs.decoder_units,
+            encoder_size=configs.decoder_units + configs.mel_units,
+            attention_dim=configs.attention_dim,
+            n_layers=configs.num_decoder_layers,
+            rnn_cell=configs.rnn_type,
+            dropout_p=configs.decoder_dropout_p            
         )
         
     def _log_states(
@@ -123,12 +125,15 @@ class ConformerRNNModelLocation(pl.LightningModule):
         pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs)
         
         # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
-        if train_md and not torch.equal(r_cs, r_os):
-            _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
+        if train_md:
+            decoder_input = self.phone_encoder(r_cs)
+            _, _, mispronunciation_phone_features = self.decoder(decoder_input, encoder_outputs, train_md)
         
-        # Forward word decoder
-        md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
-        
+            # Forward word decoder
+            md_outputs, word_attn = self.word_decoder(mispronunciation_phone_features, scores.size(1))
+        else:
+            md_outputs, word_attn = None, None
+            
         if len(L1_list) != len(r_os):
             pr_outputs = pr_outputs[L1_list] 
             r_os = r_os[L1_list]
@@ -144,14 +149,14 @@ class ConformerRNNModelLocation(pl.LightningModule):
             r_os=r_os[:, 1:],
             r_os_lengths=r_os_lengths,
             md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
-            score=scores
+            score=scores.contiguous().view(-1)
         )
 
-        return loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder
+        return loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
@@ -159,7 +164,7 @@ class ConformerRNNModelLocation(pl.LightningModule):
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         
@@ -171,9 +176,8 @@ class ConformerRNNModelLocation(pl.LightningModule):
             per = None
         
         if self.configs.md_weight > 0:
-            scores = scores.cpu()
-            md_predict = md_outputs.max(-1)[1].cpu()
-  
+            scores = scores.view(-1).cpu()
+            md_predict = md_outputs.max(-1)[1].view(-1).cpu()
             acc = accuracy_score(scores, md_predict)
             f1_ = f1_score(scores, md_predict, pos_label=0)
             precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -198,13 +202,19 @@ class ConformerRNNModelLocation(pl.LightningModule):
             print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
             plt.imshow(attn_encoder_decoder, interpolation='none')
             plt.savefig('Data/attention.png')
+            
+            if word_attn is not None:
+                word_attn = word_attn.squeeze().detach().cpu()
+                print("Decoder-Encoder Attention:", word_attn.shape)
+                plt.imshow(word_attn, interpolation='none')
+                plt.savefig('Data/word_attention.png')
 
         self._log_states('valid', loss=loss, per=per, acc=acc, f1=f1_, precision=precision_, recall=recall_)
         return loss
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder = self.forward(
+        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         

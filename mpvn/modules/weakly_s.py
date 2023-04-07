@@ -6,7 +6,6 @@ from mpvn.modules.attention import LocationAwareAttention
 from mpvn.modules.modules import View, Transpose, Linear
 import torch.nn.functional as F
 
-
 class ARNNDecoder(nn.Module):
     def __init__(self, vocab_size, max_len, hidden_size, encoder_size, attention_dim,
                  sos_id, eos_id,
@@ -43,7 +42,7 @@ class ARNNDecoder(nn.Module):
         self.attention = LocationAwareAttention(dec_dim=self.hidden_size, enc_dim=self.encoder_output_size, attn_dim=attention_dim)
         self.fc = nn.Linear(self.hidden_size + self.encoder_output_size, self.vocab_size)
 
-    def forward(self, inputs=None, encoder_outputs=None):
+    def forward(self, inputs: Tensor = None, encoder_outputs: Tensor = None, train_md: bool = False):
         """
         param:inputs: Decoder inputs sequence, Shape=(B, dec_T)
         param:encoder_outputs: Encoder outputs, Shape=(B,enc_T,enc_D)
@@ -54,16 +53,17 @@ class ARNNDecoder(nn.Module):
         attn_w = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(1)) # (B, T)
         hidden = None
         
-        decoder_input = inputs[inputs != self.eos_id].view(batch_size, -1)
-        
-        embedded = self.embedding(decoder_input) # (B, dec_T, voc_D) -> (B, dec_T, dec_D)
-        embedded = self.input_dropout(embedded)
+        if not train_md:
+            decoder_input = inputs[inputs != self.eos_id].view(batch_size, -1)
+            
+            inputs = self.embedding(decoder_input) # (B, dec_T, voc_D) -> (B, dec_T, dec_D)
+            inputs = self.input_dropout(inputs)
 
         y_all = []
         attn_w_all = []
         output_all = []
-        for i in range(embedded.size(1)):
-            embedded_inputs = embedded[:, i, :] # (B, dec_D)
+        for i in range(inputs.size(1)):
+            embedded_inputs = inputs[:, i, :] # (B, dec_D)
             
             rnn_input = torch.cat([embedded_inputs, context], dim=1) # (B, dec_D + enc_D)
             rnn_input = rnn_input.unsqueeze(1) 
@@ -171,6 +171,7 @@ class RCNNPhonemeEncoder(nn.Module):
         stride: int = 1,
         dropout_cnn: float = 0.2,
         units: int = 128,
+        embed_dim: int = 256,
         dropout_gru: float = 0.2,
         eos_id: float = 3
     ):
@@ -191,118 +192,93 @@ class RCNNPhonemeEncoder(nn.Module):
             dropout=dropout_gru,
             bidirectional=False,       
         )
+        self.output_projection = nn.Linear(units, embed_dim)
 
     def forward(self, inputs: Tensor):
         batch_size = inputs.size(0)
         inputs = inputs[inputs != self.eos_id].view(batch_size, -1)
-        outputs = self.embedding(inputs).transpose(1,2)
+        outputs = self.embedding(inputs)
         outputs = self.cnns(outputs.unsqueeze(1))
         batch_size, channels, seq_lengths, seq_dim = outputs.size()
         outputs = outputs.transpose(1, 2)
         outputs = outputs.contiguous().view(batch_size, seq_lengths, channels * seq_dim)
         outputs = self.input_projection(outputs)
-        return self.gru(outputs)[0]
+        outputs = self.gru(outputs)[0]
+        outputs = self.output_projection(outputs)
+        return outputs
     
 
 class WordDecoderARNN(nn.Module):
-    """
-    Converts higher level features (from encoder) into output utterances
-    by specifying a probability distribution over sequences of characters.
-    Args:
-        num_classes (int): number of classification
-        hidden_state_dim (int): the number of features in the decoder hidden state `h`
-        pad_id (int, optional): index of the pad symbol (default: 0)
-        sos_id (int, optional): index of the start of sentence symbol (default: 1)
-        eos_id (int, optional): index of the end of sentence symbol (default: 2)
-        num_heads (int, optional): number of attention heads. (default: 4)
-        num_layers (int, optional): number of recurrent layers (default: 2)
-        rnn_type (str, optional): type of RNN cell (default: lstm)
-        dropout_p (float, optional): dropout probability of decoder (default: 0.2)
-    """
-
-    supported_rnns = {
-        'lstm': nn.LSTM,
-        'gru': nn.GRU,
-        'rnn': nn.RNN,
-    }
-
-    def __init__(
-            self,
-            num_classes: int,
-            value_dim: int = 128,
-            attention_dim: int = 10,
-            rnn_dim: int = 64,
-            num_layers: int = 2,
-            rnn_type: str = 'gru',
-            dropout_p: float = 0.3,
-    ) -> None:
+    def __init__(self, output_size, hidden_size, encoder_size, attention_dim,
+                 n_layers=1, rnn_cell='gru',
+                 bidirectional_encoder=False, bidirectional_decoder=False,
+                 dropout_p=0):
         super(WordDecoderARNN, self).__init__()
-        self.hidden_state_dim = (rnn_dim + value_dim) // 2
-        self.attention_dim = attention_dim
-        self.rnn = self.supported_rnns[rnn_type.lower()](
-            input_size=attention_dim,
-            hidden_size=rnn_dim,
-            num_layers=num_layers,
-            bias=True,
-            batch_first=True,
-            dropout=dropout_p,
-            bidirectional=False,
-        )
-        self.attention = LocationAwareAttention(query_dim=rnn_dim, value_dim=value_dim, hidden_dim=attention_dim)
+        
+        self.output_size = output_size
+        self.hidden_size = hidden_size
+        self.bidirectional_encoder = bidirectional_encoder
+        self.bidirectional_decoder = bidirectional_decoder
+        self.encoder_output_size = encoder_size * 2 if self.bidirectional_encoder else encoder_size
+        self.n_layers = n_layers
+        self.dropout_p = dropout_p
+        
+        if rnn_cell.lower() == 'lstm':
+            self.rnn_cell = nn.LSTM
+        elif rnn_cell.lower() == 'gru':
+            self.rnn_cell = nn.GRU
+        else:
+            raise ValueError("Unsupported RNN Cell: {0}".format(rnn_cell))
+
+        self.init_input = None
+        self.rnn = self.rnn_cell(self.encoder_output_size, self.hidden_size, self.n_layers,
+                                 batch_first=True, dropout=dropout_p, bidirectional=self.bidirectional_decoder)
+
+        self.input_dropout = nn.Dropout(self.dropout_p)
+        
+        self.attention = LocationAwareAttention(dec_dim=self.hidden_size, enc_dim=self.encoder_output_size, attn_dim=attention_dim)
+        
         self.fc = nn.Sequential(
-            nn.Linear(self.hidden_state_dim * 2, self.hidden_state_dim),
-            nn.ReLU(),
-            nn.Linear(self.hidden_state_dim, self.hidden_state_dim // 2),
-            nn.ReLU(),
-            View(shape=(-1, self.hidden_state_dim // 2), contiguous=True),
-            nn.Linear(self.hidden_state_dim // 2, num_classes),
+            nn.Linear(self.hidden_size + self.encoder_output_size, (self.hidden_size + self.encoder_output_size) // 2),
+            nn.Tanh(),
+            nn.Linear((self.hidden_size + self.encoder_output_size) // 2, self.output_size),
         )
-
-    def forward_step(
-            self,
-            hidden_states: Optional[Tensor],
-            encoder_outputs: Tensor,
-            last_attn: Tensor
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        batch_size, output_lengths = encoder_outputs.size(0), 1
-
-        if self.training:
-            self.rnn.flatten_parameters()
         
-        outputs, hidden_states = self.rnn(input, hidden_states)
 
-        context, attn = self.attention(hidden_states, encoder_outputs, last_attn)
-        outputs = torch.cat((hidden_states, context), dim=2)
-
-        outputs = self.fc(outputs.view(-1, self.hidden_state_dim * 2)).log_softmax(dim=-1)
-        outputs = outputs.view(batch_size, output_lengths, -1).squeeze(1)
-
-        return outputs, hidden_states, attn
-
-    def forward(
-            self,
-            encoder_outputs: Tensor = None,
-            targets_max_length: Optional[Tensor] = None
-    ) -> Tensor:
+    def forward(self, encoder_outputs: Tensor = None, max_length: int = None):
         """
-        Forward propagate a `encoder_outputs` for training.
-        Args:
-            targets (torch.LongTensr): A target sequence passed to decoder. `IntTensor` of size ``(batch, seq_length)``
-            encoder_outputs (torch.FloatTensor): A output sequence of encoder. `FloatTensor` of size
-                ``(batch, seq_length, dimension)``
-            teacher_forcing_ratio (float): ratio of teacher forcing
-        Returns:
-            * predicted_log_probs (torch.FloatTensor): Log probability of model predictions.
+        param:inputs: Decoder inputs sequence, Shape=(B, dec_T)
+        param:encoder_hidden: Encoder last hidden states, Default : None
+        param:encoder_outputs: Encoder outputs, Shape=(B,enc_T,enc_D)
         """
-        hidden_states, attn = None, None
-        predicted_log_probs, attns = list(), list()
+        batch_size = encoder_outputs.size(0)
 
-        for _ in range(targets_max_length):
-            step_outputs, hidden_states, attn = self.forward_step(hidden_states, encoder_outputs, attn)
-            predicted_log_probs.append(step_outputs)
-            attns.append(attn)
+        context = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(2)) # (B, D)
+        attn_w = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(1)) # (B, T)
+
+        hidden = None
+        
+        y_all = []
+        attn_w_all = []
+        
+        for _ in range(max_length):
+            rnn_input = context.unsqueeze(1) 
+            output, hidden = self.rnn(rnn_input, hidden) # (B, 1, dec_D)
+
+            context, attn_w = self.attention(output, encoder_outputs, attn_w) # (B, 1, enc_D), (B, enc_T)
+            attn_w_all.append(attn_w)
             
-        predicted_log_probs = torch.stack(predicted_log_probs, dim=1)
-        attns = torch.stack(attns, dim=1)
-        
-        return predicted_log_probs, attns
+            context = context.squeeze(1)
+            output = output.squeeze(1) # (B, 1, dec_D) -> (B, dec_D)
+            context = self.input_dropout(context)
+            output = self.input_dropout(output)
+            output = torch.cat((output, context), dim=1) # (B, dec_D + enc_D)
+
+            pred = F.log_softmax(self.fc(output), dim=-1)
+            y_all.append(pred)
+            
+        y_all = torch.stack(y_all, dim=1) # (B, dec_T, out_D)
+        attn_w_all = torch.stack(attn_w_all, dim=1) # (B, dec_T, enc_T)
+
+        return y_all, attn_w_all
+

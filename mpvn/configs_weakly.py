@@ -80,22 +80,22 @@ class DictConfig:
     ctc_weight: float = 0.5
     
     # stage 0
-    md_weight: float = 0.0
-    pr_weight: float = 1.0
-    train_set = 'train'
-    test_set = 'dev'
-    valid_set = 'test'
-    warmup_steps: int = 16000
-    decay_steps: int = 100000
-    
-    # stage 1
-    # md_weight: float = 0.7
-    # pr_weight: float = 0.3
+    # md_weight: float = 0.0
+    # pr_weight: float = 1.0
     # train_set = 'train'
     # test_set = 'dev'
     # valid_set = 'test'
     # warmup_steps: int = 16000
-    # decay_steps: int = 50000
+    # decay_steps: int = 100000
+    
+    # stage 1
+    md_weight: float = 0.7
+    pr_weight: float = 0.3
+    train_set = 'train'
+    test_set = 'dev'
+    valid_set = 'test'
+    warmup_steps: int = 16000
+    decay_steps: int = 50000
     
     # combine L1 & L2
     # md_weight: float = 0.7
