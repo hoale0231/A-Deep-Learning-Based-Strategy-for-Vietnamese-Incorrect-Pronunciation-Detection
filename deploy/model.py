@@ -1,5 +1,4 @@
 import pytorch_lightning as pl
-
 from mpvn.configs import DictConfig
 from mpvn.modules.decoder import RNNDecoder, WordDecoder
 from mpvn.modules.encoder import ConformerEncoder
@@ -7,6 +6,7 @@ from mpvn.vocabs.vocab import Vocabulary
 import librosa
 import numpy as np
 import torch
+import os
 
 class ConformerRNNModel(pl.LightningModule):
     def __init__(
@@ -57,6 +57,9 @@ class ConformerRNNModel(pl.LightningModule):
             dropout_p=configs.decoder_dropout_p,
         )
         
+        os.makedirs('log', exist_ok=True)
+        os.makedirs('upload', exist_ok=True)
+        
     def load_audio(self, audio_path: str):
         signal, sr = librosa.load(audio_path, sr=self.configs.sample_rate)
         melspectrogram = librosa.feature.melspectrogram(
@@ -84,9 +87,20 @@ class ConformerRNNModel(pl.LightningModule):
         r_cs = self.parse_transcript(transcript)
         audio_length = audio.shape[1]
         _, encoder_outputs, _ = self.encoder(audio, audio_length)
-        _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
+        pr_out, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
+        y_hats = pr_out.max(-1)[1]
+        
         md_outputs = self.word_decoder(mispronunciation_phone_features)
-        md_predict = md_outputs.max(-1)[1]
+        md_outputs = torch.exp(md_outputs)
+        md_predict = [int(x[1] > 0.8) for x in md_outputs]
+        
+        # logging
+        print(
+            audio_path, transcript, ' '.join(map(str,md_predict)), 
+            self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '), 
+            sep=',', file=open('log/log.csv','a')
+        )
+
         return md_predict
 
 
