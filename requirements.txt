@@ -1,3 +1,4 @@
+wheel
 librosa==0.9.2
 matplotlib==3.6.2
 numpy==1.22.4
