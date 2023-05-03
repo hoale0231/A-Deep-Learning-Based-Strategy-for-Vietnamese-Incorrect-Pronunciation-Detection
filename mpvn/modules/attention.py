@@ -389,7 +389,7 @@ class MultiHeadLocationAwareAttention(nn.Module):
         batch_size, seq_len = value.size(0), value.size(1)
 
         if last_attn is None:
-            last_attn = value.new_zeros(batch_size, self.num_heads, seq_len)
+            last_attn = value.new_zeros((batch_size, self.num_heads, seq_len))
 
         loc_energy = torch.tanh(self.loc_proj(self.conv1d(last_attn).transpose(1, 2)))
         loc_energy = loc_energy.unsqueeze(1).repeat(1, self.num_heads, 1, 1).view(-1, seq_len, self.dim)
@@ -405,62 +405,69 @@ class MultiHeadLocationAwareAttention(nn.Module):
         value = value.view(batch_size, seq_len, self.num_heads, self.dim).permute(0, 2, 1, 3)
         value = value.contiguous().view(-1, seq_len, self.dim)
 
-        context = torch.bmm(attn.unsqueeze(1), value).view(batch_size, -1, self.num_heads * self.dim)
+        context = torch.bmm(attn.unsqueeze(1), value).view(batch_size, self.num_heads * self.dim)
         attn = attn.view(batch_size, self.num_heads, -1)
 
         return context, attn
 
 class LocationAwareAttention(nn.Module):
     """
-    Applies a location-aware attention mechanism on the output features from the decoder.
-    Location-aware attention proposed in "Attention-Based Models for Speech Recognition" paper.
-    The location-aware attention mechanism is performing well in speech recognition tasks.
-    We refer to implementation of ClovaCall Attention style.
-    Args:
-        hidden_dim (int): dimesion of hidden state vector
-        smoothing (bool): flag indication whether to use smoothing or not.
-    Inputs: query, value, last_attn, smoothing
-        - **query** (batch, q_len, hidden_dim): tensor containing the output features from the decoder.
-        - **value** (batch, v_len, hidden_dim): tensor containing features of the encoded input sequence.
-        - **last_attn** (batch_size * num_heads, v_len): tensor containing previous timestep`s attention (alignment)
-    Returns: output, attn
-        - **output** (batch, output_len, dimensions): tensor containing the feature from encoder outputs
-        - **attn** (batch * num_heads, v_len): tensor containing the attention (alignment) from the encoder outputs.
-    Reference:
-        - **Attention-Based Models for Speech Recognition**: https://arxiv.org/abs/1506.07503
-        - **ClovaCall**: https://github.com/clovaai/ClovaCall/blob/master/las.pytorch/models/attention.py
+    Location-based
     """
-    def __init__(self, mel_dim: int, phone_dim: int, hidden_dim: int, smoothing: bool = True) -> None:
+    def __init__(self, dec_dim, enc_dim, attn_dim, smoothing=False):
         super(LocationAwareAttention, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.conv1d = nn.Conv1d(in_channels=1, out_channels=hidden_dim, kernel_size=3, padding=1)
-        self.query_proj = nn.Linear(mel_dim, hidden_dim, bias=False)
-        self.value_proj = nn.Linear(phone_dim, hidden_dim, bias=False)
-        self.score_proj = nn.Linear(hidden_dim, 1, bias=True)
-        self.bias = nn.Parameter(torch.rand(hidden_dim).uniform_(-0.1, 0.1))
-        self.smoothing = smoothing
+        self.dec_dim = dec_dim
+        self.enc_dim = enc_dim
+        self.attn_dim = attn_dim
+        self.smoothing= smoothing
+        self.conv = nn.Conv1d(in_channels=1, out_channels=self.attn_dim, kernel_size=3, padding=1)
 
-    def forward(self, query: Tensor, value: Tensor, last_attn: Tensor) -> Tuple[Tensor, Tensor]:
-        batch_size, hidden_dim, seq_len = query.size(0), query.size(2), value.size(1)
+        self.W = nn.Linear(self.dec_dim, self.attn_dim, bias=False)
+        self.V = nn.Linear(self.enc_dim, self.attn_dim, bias=False)
 
-        # Initialize previous attention (alignment) to zeros
-        if last_attn is None:
-            last_attn = value.new_zeros(batch_size, seq_len)
+        self.fc = nn.Linear(attn_dim, 1, bias=True)
+        self.b = nn.Parameter(torch.rand(attn_dim))
 
-        conv_attn = torch.transpose(self.conv1d(last_attn.unsqueeze(1)), 1, 2)
-        score = self.score_proj(torch.tanh(
-                self.query_proj(query.reshape(-1, hidden_dim)).view(batch_size, -1, hidden_dim)
-                + self.value_proj(value.reshape(-1, hidden_dim)).view(batch_size, -1, hidden_dim)
-                + conv_attn
-                + self.bias
+        self.tanh = nn.Tanh()
+        self.softmax = nn.Softmax(dim=-1)
+
+        self.mask = None
+
+    def set_mask(self, mask):
+        """
+        Sets indices to be masked
+        Args:
+            mask (torch.Tensor): tensor containing indices to be masked
+        """
+        self.mask = mask
+
+    def forward(self, queries, values, last_attn):
+        """
+        param:quries: Decoder hidden states, Shape=(B,1,dec_D)
+        param:values: Encoder outputs, Shape=(B,enc_T,enc_D)
+        param:last_attn: Attention weight of previous step, Shape=(batch, enc_T)
+        """
+        # conv_attn = (B, enc_T, conv_D)
+        conv_attn = torch.transpose(self.conv(last_attn.unsqueeze(dim=1)), 1, 2)
+
+        # (B, enc_T)
+        score =  self.fc(self.tanh(
+         self.W(queries) + self.V(values) + conv_attn + self.b
         )).squeeze(dim=-1)
 
+
+        if self.mask is not None:
+            score.data.masked_fill_(self.mask, -float('inf'))
+
+        # attn_weight : (B, enc_T)
         if self.smoothing:
             score = torch.sigmoid(score)
-            attn = torch.div(score, score.sum(dim=-1).unsqueeze(dim=-1))
+            attn_weight = torch.div(score, score.sum(dim=-1).unsqueeze(dim=-1))
         else:
-            attn = F.softmax(score, dim=-1)
+            attn_weight = self.softmax(score) 
 
-        context = torch.bmm(attn.unsqueeze(dim=1), value).squeeze(dim=1)  # Bx1xT X BxTxD => Bx1xD => BxD
+        # (B, 1, enc_T) * (B, enc_T, enc_D) -> (B, 1, enc_D) 
+        context = torch.bmm(attn_weight.unsqueeze(dim=1), values)
 
-        return context, attn
+        return context, attn_weight
+    

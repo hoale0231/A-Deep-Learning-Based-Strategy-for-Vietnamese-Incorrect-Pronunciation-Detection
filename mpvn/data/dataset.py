@@ -82,6 +82,7 @@ class AudioDataset(Dataset):
         self.score = list(score)
         self.auto_gen_score = list(auto_gen_score)
         self.phone_map = phoneme_map
+        self.list_phomemes = list(phoneme_map.values())
         self.vocab = vocab
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
@@ -243,6 +244,13 @@ class AudioDataset(Dataset):
         replace = np.random.rand(len(phonemes)) < rand_factor
         phonemes_replaced = [self._random_replace(p) if (r and s) else p for p, r, s in zip(phonemes, replace, real_score)]
         score = [int(p == p_ and s) for p, p_, s in zip(phonemes, phonemes_replaced, real_score)]
+        if np.random.rand() < rand_factor:
+            idx_insert = np.random.randint(0, len(phonemes_replaced))
+            phonemes_insert = np.random.choice(self.list_phomemes).replace(' ', '=')
+            if phonemes_insert not in phonemes_replaced:
+                phonemes_replaced.insert(idx_insert, phonemes_insert)
+                score.insert(idx_insert, 0)
+
         return self._parse_phonemes(phonemes_replaced), score
     
     def _parse_score(self, score: str) -> list:
@@ -276,8 +284,8 @@ class AudioDataset(Dataset):
             else:
                 r_c = r_o
             score = self._parse_score(self.score[idx])
-            if len(self.transcripts[idx].split()) != len(score):
-                raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
+            # if len(self.transcripts[idx].split()) != len(score):
+            #     raise Exception(f"{self.utt_id[idx]} {len(self.transcripts[idx].split())} {len(score)}")
         return audio_feature, r_o, r_c, score, self.utt_id[idx], self.score[idx] == '' or self.text_gen[idx] != ''
 
     def shuffle(self):

@@ -117,17 +117,17 @@ class ConformerRNNModel(pl.LightningModule):
         
         # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
         if train_md and not torch.equal(r_cs, r_os):
-            _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
+            _, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
         
         # Forward word decoder
         md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
         
-        if len(L1_list) != len(r_os):
-            encoder_log_probs = encoder_log_probs[L1_list] 
-            encoder_output_lengths = encoder_output_lengths[L1_list]
-            pr_outputs = pr_outputs[L1_list] 
-            r_os = r_os[L1_list]
-            r_os_lengths = r_os_lengths[L1_list] 
+        # if len(L1_list) != len(r_os):
+        #     encoder_log_probs = encoder_log_probs[L1_list] 
+        #     encoder_output_lengths = encoder_output_lengths[L1_list]
+        #     pr_outputs = pr_outputs[L1_list] 
+        #     r_os = r_os[L1_list]
+        #     r_os_lengths = r_os_lengths[L1_list] 
             
         # Calc loss
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
@@ -206,6 +206,8 @@ class ConformerRNNModel(pl.LightningModule):
         )
         
         y_hats = pr_outputs.max(-1)[1]
+        y_hats_encoder = encoder_log_probs.max(-1)[1]
+        
         if L1_list:
             per = self.per_metric(r_os[:, 1:], y_hats)
         else:
@@ -220,6 +222,16 @@ class ConformerRNNModel(pl.LightningModule):
         recall_ = recall_score(scores, md_predict, pos_label=0)
         
         if batch_idx == 0:
+            print("\nResult of", utt_ids[0])
+            print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+            print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+            print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
+            print("MED output   :", md_predict)
+            print("Score        :", scores)
+            attn_encoder_decoder = torch.sum(attn_encoder_decoder, dim=0).detach().cpu()
+            print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
+            plt.imshow(attn_encoder_decoder, interpolation='none')
+            plt.savefig('Data/attention.png')
             self.df = pd.DataFrame(
                 columns= ['utt_id', 'phones', 'phone_gen', 'phones_predict', 'score', 
                  'score_predict', 'per', 'accuracy', 'f1', 'precision', 'recall']

@@ -51,44 +51,51 @@ class DictConfig:
     scheduler: str = "transformer"
 
     # Conformer-Transformer
-    mel_channels: int = 16
-    mel_units: int = 128
+    mel_channels: int = 96
+    mel_units: int = 192
     mel_kernel: int = 5
     mel_padding: int = 2
     mel_stride: int = 1
     mel_dropout_cnn: float = 0.045
     mel_dropout_gru: float = 0.045
     
-    phone_channels: int = 40
-    phone_units: int = 64
+    phone_channels: int = 64
+    phone_units: int = 128
     phone_kernel: int = 5
     phone_padding: int = 2
     phone_stride: int = 1
     phone_dropout_cnn: float = 0.2
     phone_dropout_gru: float = 0.2
     
-    embed_dim: int = 45
+    attention_dim: int = 256
+    num_decoder_layers: int = 1
+    num_attention_heads: int = 8
+    decoder_dropout_p: float = 0.2
+    decoder_units: int = 256
+    rnn_type: str = "gru"
+    
+    max_length: int = 128
     
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
     
     # stage 0
-    md_weight: float = 0.0
-    pr_weight: float = 1.0
-    train_set = 'train'
-    test_set = 'test'
-    valid_set = 'dev'
-    warmup_steps: int = 16000
-    decay_steps: int = 100000
-    
-    # stage 1
-    # md_weight: float = 0.7
-    # pr_weight: float = 0.3
+    # md_weight: float = 0.0
+    # pr_weight: float = 1.0
     # train_set = 'train'
     # test_set = 'dev'
     # valid_set = 'test'
     # warmup_steps: int = 16000
-    # decay_steps: int = 50000
+    # decay_steps: int = 100000
+    
+    # stage 1
+    md_weight: float = 0.7
+    pr_weight: float = 0.3
+    train_set = 'train'
+    test_set = 'dev'
+    valid_set = 'test'
+    warmup_steps: int = 16000
+    decay_steps: int = 50000
     
     # combine L1 & L2
     # md_weight: float = 0.7
@@ -106,17 +113,16 @@ class DictConfig:
     # warmup_steps: int = 10000
     # decay_steps: int = 35000
     
-    gamma: float = 2.0
+    gamma: float = 0.0
     joint_ctc_attention: bool = True
-    rnn_type: str = "gru"
     optimizer: str = "adam"
-    half_subsampling: bool = False
-
+    is_weakly_s: bool = True
+    
     # BaseTrainer
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 4
+    num_workers: int = 8
     batch_size: int = 8
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0

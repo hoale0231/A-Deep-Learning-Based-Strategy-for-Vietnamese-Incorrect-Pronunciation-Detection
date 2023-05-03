@@ -26,23 +26,28 @@ from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.sampler import Sampler
 
-def _collate_fn(batch, pad_id: int = 0):
-    """ functions that pad to the maximum sequence length """
-    inputs, r_os, r_cs, scores, utt_ids, is_L1s = zip(*batch)
-    
-    input_lengths = torch.IntTensor([len(s[0]) for s in batch])
-    r_os_lengths = torch.IntTensor([len(s[1])-1 for s in batch])
-    
-    r_os = [torch.LongTensor(r_o) for r_o in r_os]
-    r_cs = [torch.LongTensor(r_c) for r_c in r_cs]
-    
-    inputs = pad_sequence(inputs, batch_first=True, padding_value=0)
-    r_os = pad_sequence(r_os, batch_first=True, padding_value=pad_id)
-    r_cs = pad_sequence(r_cs, batch_first=True, padding_value=pad_id)
-    scores =  torch.LongTensor(sum(scores, []))
-    L1_list = [idx for idx, is_L1 in enumerate(is_L1s) if is_L1]
-
-    return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
+def _collate_fn(is_weakly_s: bool = False):
+    def collate_fn(batch, pad_id: int = 0):
+        """ functions that pad to the maximum sequence length """
+        inputs, r_os, r_cs, scores, utt_ids, is_L1s = zip(*batch)
+        
+        input_lengths = torch.IntTensor([len(s[0]) for s in batch])
+        r_os_lengths = torch.IntTensor([len(s[1])-1 for s in batch])
+        
+        r_os = [torch.LongTensor(r_o) for r_o in r_os]
+        r_cs = [torch.LongTensor(r_c) for r_c in r_cs]
+        
+        inputs = pad_sequence(inputs, batch_first=True, padding_value=0)
+        r_os = pad_sequence(r_os, batch_first=True, padding_value=pad_id)
+        r_cs = pad_sequence(r_cs, batch_first=True, padding_value=pad_id)
+        L1_list = [idx for idx, is_L1 in enumerate(is_L1s) if is_L1]
+        if is_weakly_s:
+            scores = [torch.LongTensor(score) for score in scores]
+            scores = pad_sequence(scores, batch_first=True, padding_value=-100)
+        else:
+            scores =  torch.LongTensor(sum(scores, []))
+        return inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list
+    return collate_fn
 
 
 class AudioDataLoader(DataLoader):
@@ -52,6 +57,7 @@ class AudioDataLoader(DataLoader):
             dataset: torch.utils.data.Dataset,
             num_workers: int,
             batch_sampler: torch.utils.data.sampler.Sampler,
+            is_weakly_s: bool = False,
             **kwargs,
     ) -> None:
         super(AudioDataLoader, self).__init__(
@@ -60,7 +66,7 @@ class AudioDataLoader(DataLoader):
             batch_sampler=batch_sampler,
             **kwargs,
         )
-        self.collate_fn = _collate_fn
+        self.collate_fn = _collate_fn(is_weakly_s)
 
 
 class BucketingSampler(Sampler):

@@ -11,8 +11,8 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
-from mpvn.model.model import ConformerRNNModel, accuracy_score, f1_score, precision_score, recall_score
-from mpvn.configs import DictConfig
+from mpvn.model.weakly_s import ConformerRNNModelLocation, accuracy_score, f1_score, precision_score, recall_score
+from mpvn.configs_weakly import DictConfig
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                         max_epochs=configs.max_epochs,
                         callbacks=[checkpoint_callback, early_stop_callback, learning_rate_callback])
     
-    model_class = ConformerRNNModel
+    model_class = ConformerRNNModelLocation
     
     if args.checkpoint != None:
         if os.path.isdir(args.checkpoint):
