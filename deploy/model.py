@@ -1,5 +1,4 @@
 import pytorch_lightning as pl
-
 from mpvn.configs import DictConfig
 from mpvn.modules.decoder import RNNDecoder, WordDecoder
 from mpvn.modules.encoder import ConformerEncoder
@@ -7,6 +6,7 @@ from mpvn.vocabs.vocab import Vocabulary
 import librosa
 import numpy as np
 import torch
+import os
 
 class ConformerRNNModel(pl.LightningModule):
     def __init__(
@@ -56,6 +56,13 @@ class ConformerRNNModel(pl.LightningModule):
             num_heads=configs.num_attention_heads,
             dropout_p=configs.decoder_dropout_p,
         )
+        self.origin_thresholds = 0.65
+        self.thresholds = self.origin_thresholds
+        self.previous_transcript = ''
+        self.previous_score = [1]
+        
+        os.makedirs('log', exist_ok=True)
+        os.makedirs('upload', exist_ok=True)
         
     def load_audio(self, audio_path: str):
         signal, sr = librosa.load(audio_path, sr=self.configs.sample_rate)
@@ -80,13 +87,42 @@ class ConformerRNNModel(pl.LightningModule):
         return torch.tensor([phonemes])
             
     def predict(self, audio_path: str, transcript: str):
+        transcript = transcript.replace('?', '')
+        
+        # trick
+        print(transcript, self.previous_score)
+        if self.previous_transcript == transcript:
+            if any([s == 0 for s in self.previous_score]):
+                self.thresholds = max(self.thresholds - 0.1, 0.45)
+            else:
+                self.thresholds = min(self.thresholds + 0.5, 0.7)
+        else:
+            self.thresholds = self.origin_thresholds
+        
+        
         audio = self.load_audio(audio_path)
         r_cs = self.parse_transcript(transcript)
         audio_length = audio.shape[1]
         _, encoder_outputs, _ = self.encoder(audio, audio_length)
-        _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
+        pr_out, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs)
+        y_hats = pr_out.max(-1)[1]
+        
         md_outputs = self.word_decoder(mispronunciation_phone_features)
-        md_predict = md_outputs.max(-1)[1]
+        md_outputs = torch.exp(md_outputs)
+        
+        ref = self.vocab.label_to_string(r_cs[0]).replace('   ', '=').replace(' ', '').replace('=', ' ').replace('<e>', '').replace('<s>','').split()
+        hyp = self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' ').replace('<e>', ' ').split()
+
+        md_predict = [int(x[1] > self.thresholds or r == h) for x, r, h in zip(md_outputs, ref, hyp)]
+        # logging
+        print(
+            audio_path, transcript, ' '.join(map(str,md_predict)), 
+            self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '),
+            self.thresholds,
+            sep=',', file=open('log/log.csv','a')
+        )
+        self.previous_score = md_predict
+        self.previous_transcript = transcript
         return md_predict
 
 
