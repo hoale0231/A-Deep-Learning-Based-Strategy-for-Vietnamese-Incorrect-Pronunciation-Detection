@@ -51,8 +51,8 @@ class DictConfig:
     scheduler: str = "transformer"
 
     # Conformer-Transformer
-    mel_channels: int = 96
-    mel_units: int = 192
+    mel_channels: int = 128
+    mel_units: int = 256
     mel_kernel: int = 5
     mel_padding: int = 2
     mel_stride: int = 1
@@ -89,13 +89,13 @@ class DictConfig:
     # decay_steps: int = 100000
     
     # stage 1
-    md_weight: float = 0.7
-    pr_weight: float = 0.3
-    train_set = 'train'
-    test_set = 'dev'
-    valid_set = 'test'
-    warmup_steps: int = 16000
-    decay_steps: int = 50000
+    # md_weight: float = 0.7
+    # pr_weight: float = 0.3
+    # train_set = 'train'
+    # test_set = 'dev'
+    # valid_set = 'test'
+    # warmup_steps: int = 8000
+    # decay_steps: int = 10000
     
     # combine L1 & L2
     # md_weight: float = 0.7
@@ -105,25 +105,25 @@ class DictConfig:
     # valid_set = 'label_valid'
     
     # stage 2
-    # md_weight: float = 1.0
-    # pr_weight: float = 0.0
-    # train_set = 'label_train'
-    # test_set = 'label_test'
-    # valid_set = 'label_valid'
-    # warmup_steps: int = 10000
-    # decay_steps: int = 35000
+    md_weight: float = 1.0
+    pr_weight: float = 0.0
+    train_set = 'label_train'
+    test_set = 'label_test'
+    valid_set = 'label_valid'
+    warmup_steps: int = 3000
+    decay_steps: int = 5000
     
     gamma: float = 0.0
     joint_ctc_attention: bool = True
     optimizer: str = "adam"
     is_weakly_s: bool = True
-    
+    add_noise: bool = False
     # BaseTrainer
     seed: int = 1
     accelerator: str = "cuda"
     accumulate_grad_batches: int = 4
-    num_workers: int = 8
-    batch_size: int = 8
+    num_workers: int = 4
+    batch_size: int = 16
     check_val_every_n_epoch: int = 1
     gradient_clip_val: float = 5.0
     max_epochs: int = 50

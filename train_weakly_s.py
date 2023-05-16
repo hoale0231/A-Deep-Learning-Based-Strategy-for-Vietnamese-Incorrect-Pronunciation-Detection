@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
-from mpvn.model.weakly_s import ConformerRNNModelLocation, accuracy_score, f1_score, precision_score, recall_score
+from mpvn.model.weakly_s import Weakly_s, accuracy_score, f1_score, precision_score, recall_score
 from mpvn.configs_weakly import DictConfig
 
 def get_parser():
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=3,
+        save_top_k=5,
         monitor="valid_loss",
         mode="min",
         dirpath=args.savedir,
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     early_stop_callback = EarlyStopping(
         monitor="valid_loss", 
         min_delta=0.00, 
-        patience=5, 
+        patience=10, 
         verbose=False, 
         mode="min"
     )
@@ -80,14 +80,14 @@ if __name__ == '__main__':
     data_module = LightningGradDataModule(configs)
     vocab = data_module.get_vocab() 
 
-    trainer = pl.Trainer(accelerator=configs.accelerator,
-                        devices=[args.gpu],
+    trainer = pl.Trainer(accelerator='cpu',
+                        # devices=[args.gpu],
                         logger=logger,
                         # val_check_interval=0.25,
                         max_epochs=configs.max_epochs,
                         callbacks=[checkpoint_callback, early_stop_callback, learning_rate_callback])
     
-    model_class = ConformerRNNModelLocation
+    model_class = Weakly_s
     
     if args.checkpoint != None:
         if os.path.isdir(args.checkpoint):
@@ -126,7 +126,11 @@ if __name__ == '__main__':
         trainer.validate(model, data_module)
     
     elif args.action == 'test':
+        import time
+        s = time.time()
         trainer.test(model, data_module)
+        e = time.time()
+        print("time", e-s)
         score = ' '.join(list(model.df.score))
         predict = ' '.join(list(model.df.score_predict))
         score = [int(i) for i in score.split()]

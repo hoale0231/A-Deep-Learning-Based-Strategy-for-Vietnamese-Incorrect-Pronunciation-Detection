@@ -11,8 +11,8 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from mpvn.utils import *
 from mpvn.data.grad.lit_data_module import LightningGradDataModule
 from mpvn.metric import WordErrorRate
-from mpvn.model.model import ConformerRNNModel, accuracy_score, f1_score, precision_score, recall_score
-from mpvn.configs import DictConfig
+from mpvn.model.conformer_weakly_s import Conformer_Weakly_s_Model, accuracy_score, f1_score, precision_score, recall_score
+from mpvn.config_conformer_weakly_s import DictConfig
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=3,
+        save_top_k=10,
         monitor="valid_loss",
         mode="min",
         dirpath=args.savedir,
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     early_stop_callback = EarlyStopping(
         monitor="valid_loss", 
         min_delta=0.00, 
-        patience=5, 
+        patience=10, 
         verbose=False, 
         mode="min"
     )
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                         max_epochs=configs.max_epochs,
                         callbacks=[checkpoint_callback, early_stop_callback, learning_rate_callback])
     
-    model_class = ConformerRNNModel
+    model_class = Conformer_Weakly_s_Model
     
     if args.checkpoint != None:
         if os.path.isdir(args.checkpoint):
@@ -98,8 +98,6 @@ if __name__ == '__main__':
                 vocab=vocab,
                 per_metric=WordErrorRate(vocab)
             )
-            # print(model.state_dict().keys(), file=open('log.log', 'w'))
-            # exit()
             model = average_checkpoints(model, glob(args.checkpoint+'/*'))
         elif os.path.isfile(args.checkpoint):
             print('Checkpoint path is a file, dont avg checkpoint')
@@ -128,12 +126,7 @@ if __name__ == '__main__':
         trainer.validate(model, data_module)
     
     elif args.action == 'test':
-        import time
-        s = time.time()
         trainer.test(model, data_module)
-        trainer.save_checkpoint(args.checkpoint+'.ckpt')
-        e = time.time()
-        print("time", e-s)
         score = ' '.join(list(model.df.score))
         predict = ' '.join(list(model.df.score_predict))
         score = [int(i) for i in score.split()]

@@ -53,11 +53,11 @@ class ARNNDecoder(nn.Module):
         attn_w = encoder_outputs.new_zeros(batch_size, encoder_outputs.size(1)) # (B, T)
         hidden = None
         
-        if not train_md:
-            decoder_input = inputs[inputs != self.eos_id].view(batch_size, -1)
-            
-            inputs = self.embedding(decoder_input) # (B, dec_T, voc_D) -> (B, dec_T, dec_D)
-            inputs = self.input_dropout(inputs)
+        # if not train_md:
+        decoder_input = inputs[inputs != self.eos_id].view(batch_size, -1)
+        
+        inputs = self.embedding(decoder_input) # (B, dec_T, voc_D) -> (B, dec_T, dec_D)
+        inputs = self.input_dropout(inputs)
 
         y_all = []
         attn_w_all = []
@@ -77,7 +77,7 @@ class ARNNDecoder(nn.Module):
             context = self.input_dropout(context)
             output = self.input_dropout(output)
             output = torch.cat((output, context), dim=1) # (B, dec_D + enc_D)
-            output_all.append(output)
+            output_all.append(torch.clone(output))
 
             pred = F.log_softmax(self.fc(output), dim=-1)
             y_all.append(pred)

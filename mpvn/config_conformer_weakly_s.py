@@ -70,8 +70,6 @@ class DictConfig:
     cross_entropy_weight: float = 0.5
     ctc_weight: float = 0.5
     
-    add_noise: bool = False
-    
     # stage 0
     # md_weight: float = 0.0
     # pr_weight: float = 1.0
@@ -87,8 +85,8 @@ class DictConfig:
     # train_set = 'train'
     # test_set = 'test'
     # valid_set = 'test'
-    # warmup_steps: int = 3000
-    # decay_steps: int = 5000
+    # warmup_steps: int = 6000
+    # decay_steps: int = 10000
     
     # combine L1 & L2
     # md_weight: float = 0.7
@@ -102,16 +100,17 @@ class DictConfig:
     pr_weight: float = 0.0
     train_set = 'label_train'
     test_set = 'label_test'
-    valid_set = 'label_valid'
-    warmup_steps: int = 1000
-    decay_steps: int = 2000
-
-    gamma: float = 3.0
+    valid_set = 'label_test'
+    warmup_steps: int = 3000
+    decay_steps: int = 5000
+    
+    gamma: float = 0.0
     joint_ctc_attention: bool = True
     rnn_type: str = "gru"
     optimizer: str = "adam"
     half_subsampling: bool = False
-    is_weakly_s: bool = False
+    is_weakly_s: bool = True
+    add_noise: bool = False
     
     # BaseTrainer
     seed: int = 1

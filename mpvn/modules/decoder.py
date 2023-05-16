@@ -51,6 +51,7 @@ class RNNDecoder(nn.Module):
     def _split_output_to_word(self, input: Tensor, output: Tensor):
         word_list = []
         max_len = 0
+        
         for b in range(len(input)):
             word = []
             for i, o in zip(input[b], output[b]):

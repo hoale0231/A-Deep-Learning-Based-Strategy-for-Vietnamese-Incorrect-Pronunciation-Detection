@@ -12,7 +12,6 @@ from collections import defaultdict
 
 def average_checkpoints(model: nn.modules, filenames: List[Path], device: torch.device = torch.device("cpu")) -> dict:
     n = len(filenames)
-
     avg = torch.load(filenames[0], map_location=device)['state_dict']
 
     # Identify shared parameters. Two parameters are said to be shared
@@ -39,6 +38,31 @@ def average_checkpoints(model: nn.modules, filenames: List[Path], device: torch.
             avg[k] //= n
             
     model.load_state_dict(avg)
+    
+    # new_weight = model.state_dict()
+    # for k, v in avg.items():
+    #     if 'encoder.fc.3.linear.weight' in k or 'decoder.fc.3.' in k or 'decoder.embedding.weight' in k:
+    #         continue
+    #     # if k == 'decoder.fc.0.weight':
+    #     #     k = 'decoder.output_projection.weight'
+    #     # if k == 'decoder.fc.0.bias':
+    #     #     k = 'decoder.output_projection.bias'
+    #     # if k == 'decoder.fc.3.weight':
+    #     #     k = 'decoder.fc.2.weight'
+    #     # if k == 'decoder.fc.3.bias':
+    #     #     k = 'decoder.fc.2.bias'
+    
+    #     new_weight[k] = v
+    
+    # model.load_state_dict(new_weight)
+    # for param in model.parameters():
+    #     param.requires_grad = False
+    # for param in model.encoder.fc.parameters():
+    #     param.requires_grad = True
+    # for param in model.decoder.fc.parameters():
+    #     param.requires_grad = True
+    # for param in model.decoder.embedding.parameters():
+    #     param.requires_grad = True
     
     return model
 

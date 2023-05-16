@@ -69,6 +69,7 @@ class LightningGradDataModule(pl.LightningDataModule):
         self.test_set = configs.test_set
         self.valid_set = configs.valid_set
         self.is_weakly_s = configs.is_weakly_s
+        self.add_noise = configs.add_noise
         self.logger = logging.getLogger(__name__)
 
         if configs.feature_extract_method == 'spectrogram':
@@ -115,6 +116,7 @@ class LightningGradDataModule(pl.LightningDataModule):
                 vocab=self.vocab,
                 phoneme_map=self.phone_map,
                 apply_spec_augment=self.apply_spec_augment if 'train' in split else False,
+                add_noise=self.add_noise,
                 auto_gen_score=gen_score,
                 sample_rate=self.sample_rate,
                 num_mels=self.num_mels,

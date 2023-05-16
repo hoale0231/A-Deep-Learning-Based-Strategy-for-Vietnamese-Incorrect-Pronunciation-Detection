@@ -49,14 +49,12 @@ class LabelSmoothedCrossEntropyLoss(nn.Module):
             num_classes: int,
             ignore_index: int,
             smoothing: float = 0.1,
-            dim: int = -1,
             reduction='mean',
     ) -> None:
         super(LabelSmoothedCrossEntropyLoss, self).__init__()
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
         self.num_classes = num_classes
-        self.dim = dim
         self.ignore_index = ignore_index
         self.reduction = reduction.lower()
 

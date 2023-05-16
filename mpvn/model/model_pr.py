@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from mpvn.configs import DictConfig
 from mpvn.metric import WordErrorRate
 from mpvn.modules.decoder_pr import *
-from mpvn.modules.decoder import RNNDecoder
+from mpvn.modules.decoder import ARNNDecoder
 from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
@@ -58,7 +58,7 @@ class ConformerLSTMModel(pl.LightningModule):
             half_subsampling=configs.half_subsampling
         )
         
-        self.decoder = RNNDecoder(
+        self.decoder = ARNNDecoder(
             num_classes=num_classes,
             hidden_state_dim=configs.encoder_dim,
             eos_id=self.vocab.eos_id,

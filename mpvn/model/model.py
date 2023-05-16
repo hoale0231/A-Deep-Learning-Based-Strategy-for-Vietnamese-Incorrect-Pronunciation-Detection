@@ -113,7 +113,7 @@ class ConformerRNNModel(pl.LightningModule):
         
         # Forward phone decoder
         train_md = self.configs.md_weight > 0
-        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, train_md)
+        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, torch.equal(r_cs, r_os))
         
         # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
         if train_md and not torch.equal(r_cs, r_os):
@@ -122,12 +122,12 @@ class ConformerRNNModel(pl.LightningModule):
         # Forward word decoder
         md_outputs = self.word_decoder(mispronunciation_phone_features) if train_md else None
         
-        if len(L1_list) != len(r_os):
-            encoder_log_probs = encoder_log_probs[L1_list] 
-            encoder_output_lengths = encoder_output_lengths[L1_list]
-            pr_outputs = pr_outputs[L1_list] 
-            r_os = r_os[L1_list]
-            r_os_lengths = r_os_lengths[L1_list] 
+        # if len(L1_list) != len(r_os):
+        #     encoder_log_probs = encoder_log_probs[L1_list] 
+        #     encoder_output_lengths = encoder_output_lengths[L1_list]
+        #     pr_outputs = pr_outputs[L1_list] 
+        #     r_os = r_os[L1_list]
+        #     r_os_lengths = r_os_lengths[L1_list] 
             
         # Calc loss
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
@@ -177,7 +177,7 @@ class ConformerRNNModel(pl.LightningModule):
         else:
             scores = md_predict = acc = f1_ = precision_ = recall_ = None
             
-        if batch_idx == 0:
+        if 'vivosdev08_271' in utt_ids:
             print("\nResult of", utt_ids[0])
             if L1_list:
                 print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))

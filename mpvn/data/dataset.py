@@ -30,6 +30,13 @@ import numpy as np
 from torch import Tensor
 from torch.utils.data import Dataset
 from mpvn.vocabs.vocab import Vocabulary
+# import pyloudnorm as pyln
+# from glob import glob
+
+# noise_file = glob('/home/hoa/mispronunciation-detection-for-vietnamese/Data/noise/*.wav')
+# noises = [sf.read(file)[0] for file in noise_file]
+# meter = pyln.Meter(16000)
+# noise_loundness = [meter.integrated_loudness(noise) for noise in noises]
 
 class AudioDataset(Dataset):
     """
@@ -66,6 +73,7 @@ class AudioDataset(Dataset):
             phoneme_map: dict,
             auto_gen_score: list,
             apply_spec_augment: bool = False,
+            add_noise: bool = False,
             sample_rate: int = 16000,
             num_mels: int = 80,
             frame_length: float = 25.0,
@@ -82,6 +90,7 @@ class AudioDataset(Dataset):
         self.score = list(score)
         self.auto_gen_score = list(auto_gen_score)
         self.phone_map = phoneme_map
+        self.list_phomemes = list(phoneme_map.values())
         self.vocab = vocab
         self.spec_augment_flags = [False] * len(self.audio_paths)
         self.dataset_size = len(self.audio_paths)
@@ -94,6 +103,7 @@ class AudioDataset(Dataset):
         self.freq_mask_para = freq_mask_para
         self.time_mask_num = time_mask_num
         self.freq_mask_num = freq_mask_num
+        # self.add_noise = add_noise
         self.n_fft = int(round(sample_rate * 0.001 * frame_length))
         self.hop_length = int(round(sample_rate * 0.001 * frame_shift))
         
@@ -144,7 +154,7 @@ class AudioDataset(Dataset):
         """
         time_axis_length = feature.size(0)
         freq_axis_length = feature.size(1)
-        time_mask_para = time_axis_length / 20      # Refer to "Specaugment on large scale dataset" paper
+        time_mask_para = time_axis_length / 10      # Refer to "Specaugment on large scale dataset" paper
 
         # time mask
         for _ in range(self.time_mask_num):
@@ -183,11 +193,38 @@ class AudioDataset(Dataset):
         Returns:
             feature (np.ndarray): feature extract by sub-class
         """
+        # print(audio_path)
         signal, sr = sf.read(audio_path)
         if sr != 16000:
             print(audio_path, file=open('file_invalid_sample_rate.txt', 'a'))
             signal = librosa.resample(signal, orig_sr=sr, target_sr=16000)
-    
+        
+        # if self.add_noise and np.random.rand() > 0.5:
+        #     try:
+        #         i_noise = random.randrange(len(noises))
+        #         rand_val = random.choice([10, 15, 20, 25])
+        #         noise = noises[i_noise]
+        #         n_loudness = noise_loundness[i_noise]
+                
+        #         s_loudness = meter.integrated_loudness(signal)
+        #         input_snr = s_loudness - n_loudness
+                
+        #         scale_factor = 10**( (input_snr - rand_val)/20)
+                
+        #         if len(noise) == len(signal):
+        #             signal = signal + noise * scale_factor
+        #         elif len(noise) > len(signal):
+        #             start = random.randrange(len(noise) - len(signal))
+        #             signal = signal + noise[start:start+len(signal)] * scale_factor
+        #         else:
+        #             start = random.randrange(len(signal) - len(noise))
+        #             signal[start:start+len(noise)] = signal[start:start+len(noise)] + noise * scale_factor
+        #         if len(signal) == 0:
+        #             raise
+        #     except:
+        #         sf.write(f"/home/hoa/mispronunciation-detection-for-vietnamese/Data/noise/combine/{rand_val}_{i_noise}_{audio_path.split('/')[-1]}", signal, 16000)
+        #         signal, sr = sf.read(audio_path)
+        
         feature = self._get_feature(signal)
 
         feature -= feature.mean()
@@ -226,13 +263,13 @@ class AudioDataset(Dataset):
             vowels_ = vowels
             final_cons_ = final_cons
 
-            if np.random.rand() < 0.25:
+            if np.random.rand() < 0.5:
                 init_cons_ = np.random.choice(self.init_consonants)
-            if np.random.rand() < 0.25:
+            if np.random.rand() < 0.5:
                 init_vowels_ = np.random.choice(self.init_vowels)
-            if np.random.rand() < 0.25:
+            if np.random.rand() < 0.5:
                 vowels_ = np.random.choice(self.vowels)
-            if np.random.rand() < 0.25:
+            if np.random.rand() < 0.5:
                 final_cons_ = np.random.choice(self.final_consonants)
             new_phones = [p for p in [init_cons_, init_vowels_, vowels_, final_cons_] if p != '']
             
@@ -243,6 +280,13 @@ class AudioDataset(Dataset):
         replace = np.random.rand(len(phonemes)) < rand_factor
         phonemes_replaced = [self._random_replace(p) if (r and s) else p for p, r, s in zip(phonemes, replace, real_score)]
         score = [int(p == p_ and s) for p, p_, s in zip(phonemes, phonemes_replaced, real_score)]
+        # for _ in range(5):
+        #     if np.random.rand() < rand_factor or len(phonemes_replaced) == 0:
+        #         idx_insert = np.random.randint(0, len(phonemes_replaced)+1)
+        #         phonemes_insert = np.random.choice(self.list_phomemes).replace(' ', '=')
+        #         if phonemes_insert not in phonemes_replaced:
+        #             phonemes_replaced.insert(idx_insert, phonemes_insert)
+        #             score.insert(idx_insert, 0)
         return self._parse_phonemes(phonemes_replaced), score
     
     def _parse_score(self, score: str) -> list:
@@ -268,6 +312,8 @@ class AudioDataset(Dataset):
                 rand_factor = 0.25
             else:
                 score = [1] * len(phonemes) 
+                rand_factor = 0.5
+            if 'lesson' in audio_path or "tôi" in self.transcripts[idx]:
                 rand_factor = 0.5
             r_c, score = self._random_score(phonemes, score, rand_factor)
         else:

@@ -10,16 +10,18 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from mpvn.configs_weakly import DictConfig
+from mpvn.configs import DictConfig
 from mpvn.metric import *
-from mpvn.modules.weakly_s import ARNNDecoder, RCNNMelEncoder, RCNNPhonemeEncoder, WordDecoderARNN
+from mpvn.modules.decoder import RNNDecoder
+from mpvn.modules.weakly_s import WordDecoderARNN
+from mpvn.modules.encoder import ConformerEncoder
 from mpvn.optim import AdamP, RAdam
 from mpvn.optim.lr_scheduler import TransformerLRScheduler, TriStageLRScheduler
 from mpvn.criterion.criterion import JointLoss
 from mpvn.vocabs import GradVocabulary
 from mpvn.vocabs.vocab import Vocabulary
 
-class Weakly_s(pl.LightningModule):
+class Conformer_Weakly_s_Model(pl.LightningModule):
     def __init__(
             self,
             configs: DictConfig,
@@ -27,7 +29,7 @@ class Weakly_s(pl.LightningModule):
             vocab: Vocabulary = GradVocabulary,
             per_metric: WordErrorRate = WordErrorRate,
     ) -> None:
-        super(Weakly_s, self).__init__()
+        super(Conformer_Weakly_s_Model, self).__init__()
         self.configs = configs
         self.vocab = vocab
         self.per_metric = per_metric
@@ -41,48 +43,41 @@ class Weakly_s(pl.LightningModule):
             gamma=configs.gamma
         )
 
-        self.encoder = RCNNMelEncoder(
+        self.encoder = ConformerEncoder(
             num_classes=num_classes,
             input_dim=configs.num_mels,
-            channels=configs.mel_channels,
-            kernel=configs.mel_kernel,
-            padding=configs.mel_padding,
-            stride=configs.mel_stride,
-            dropout_cnn=configs.mel_dropout_cnn,
-            dropout_gru=configs.mel_dropout_gru,
-            units=configs.mel_units
+            encoder_dim=configs.encoder_dim,
+            num_layers=configs.num_encoder_layers,
+            num_attention_heads=configs.num_attention_heads,
+            feed_forward_expansion_factor=configs.feed_forward_expansion_factor,
+            conv_expansion_factor=configs.conv_expansion_factor,
+            input_dropout_p=configs.input_dropout_p,
+            feed_forward_dropout_p=configs.feed_forward_dropout_p,
+            attention_dropout_p=configs.attention_dropout_p,
+            conv_dropout_p=configs.conv_dropout_p,
+            conv_kernel_size=configs.conv_kernel_size,
+            half_step_residual=configs.half_step_residual,
+            joint_ctc_attention=configs.joint_ctc_attention,
+            half_subsampling=configs.half_subsampling
         )
         
-        self.phone_encoder = RCNNPhonemeEncoder(
+        self.decoder = RNNDecoder(
             num_classes=num_classes,
-            channels=configs.phone_channels,
-            kernel=configs.phone_kernel,
-            padding=configs.phone_padding,
-            stride=configs.phone_stride,
-            dropout_cnn=configs.mel_dropout_cnn,
-            units=configs.phone_units,
-            dropout_gru=configs.mel_dropout_gru,
-            eos_id=vocab.eos_id
-        )
-        
-        self.decoder = ARNNDecoder(
-            vocab_size=num_classes,
-            max_len=configs.max_length,
-            hidden_size=configs.decoder_units,
-            encoder_size=configs.mel_units,
-            attention_dim=configs.attention_dim,
-            sos_id=vocab.sos_id,
-            eos_id=vocab.eos_id,
-            n_layers=configs.num_decoder_layers,
-            rnn_cell=configs.rnn_type,
-            dropout_p=configs.decoder_dropout_p
+            hidden_state_dim=configs.encoder_dim,
+            eos_id=self.vocab.eos_id,
+            space_id=self.vocab.space_id,
+            pad_id=self.vocab.pad_id,
+            num_heads=configs.num_attention_heads,
+            dropout_p=configs.decoder_dropout_p,
+            num_layers=configs.num_decoder_layers,
+            rnn_type=configs.rnn_type
         )
         
         self.word_decoder = WordDecoderARNN(
             output_size=2,
-            hidden_size=configs.decoder_units,
-            encoder_size=configs.decoder_units + configs.mel_units,
-            attention_dim=configs.attention_dim,
+            hidden_size=configs.encoder_dim,
+            encoder_size=configs.encoder_dim * 2,
+            attention_dim=configs.encoder_dim,
             n_layers=configs.num_decoder_layers,
             rnn_cell=configs.rnn_type,
             dropout_p=configs.decoder_dropout_p            
@@ -117,49 +112,45 @@ class Weakly_s(pl.LightningModule):
             self.log(f"{stage}_recall", recall*100)
           
     def forward(self, inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list): 
-        # Forward encoder
-        encoder_log_probs, encoder_outputs, output_lengths = self.encoder(inputs, input_lengths)
-        # decoder_input = self.phone_encoder(r_os)
+        # Forward encoder   
+        encoder_log_probs, encoder_outputs, encoder_output_lengths = self.encoder(inputs, input_lengths)
         
         # Forward phone decoder
         train_md = self.configs.md_weight > 0
-        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs)
+        pr_outputs, attn_encoder_decoder, mispronunciation_phone_features = self.decoder(r_os, encoder_outputs, train_md)
         
         # Get mispronunciation_phone_features with r_cs if pronunciation errors are synthetic
-        if train_md:
-            # decoder_input = self.phone_encoder(r_cs)
+        if train_md and not torch.equal(r_cs, r_os):
             _, _, mispronunciation_phone_features = self.decoder(r_cs, encoder_outputs, train_md)
         
-            # Forward word decoder
-            md_outputs, word_attn = self.word_decoder(mispronunciation_phone_features, scores.size(1))
-        else:
-            md_outputs, word_attn = None, None
-            
-        if len(L1_list) != len(r_os):
-            pr_outputs = pr_outputs[L1_list] 
-            r_os = r_os[L1_list]
+        # Forward word decoder
+        md_outputs, word_attn = self.word_decoder(mispronunciation_phone_features, scores.size(1))
+        
+        # if len(L1_list) != len(r_os):
+        #     encoder_log_probs = encoder_log_probs[L1_list] 
+        #     encoder_output_lengths = encoder_output_lengths[L1_list]
+        #     pr_outputs = pr_outputs[L1_list] 
+        #     r_os = r_os[L1_list]
+        #     r_os_lengths = r_os_lengths[L1_list] 
             
         # Calc loss
         max_target_length = r_os.size(1) - 1  # minus the start of sequence symbol
         pr_outputs = pr_outputs[:, :max_target_length, :]
-        # if encoder_log_probs.shape[0] > 1:
-        #     print(scores)
-        #     exit()
         loss, pr_loss, md_loss = self.criterion(
             encoder_log_probs=encoder_log_probs.transpose(0, 1),
             pr_log_probs=pr_outputs.contiguous().view(-1, pr_outputs.size(-1)),
-            encoder_output_lengths=output_lengths,
+            encoder_output_lengths=encoder_output_lengths,
             r_os=r_os[:, 1:],
             r_os_lengths=r_os_lengths,
             md_log_probs=md_outputs.contiguous().view(-1, md_outputs.size(-1)) if md_outputs != None else None,
             score=scores.contiguous().view(-1)
         )
 
-        return loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn
+        return loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, word_attn
                 
     def training_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         self._log_states('train', loss=loss, pr_loss=pr_loss, md_loss=md_loss)
@@ -167,20 +158,22 @@ class Weakly_s(pl.LightningModule):
 
     def validation_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         
         y_hats = pr_outputs.max(-1)[1]
+        y_hats_encoder = encoder_log_probs.max(-1)[1]
 
-        if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
-        else:
-            per = None
+        # if L1_list:
+        per = self.per_metric(r_os[:, 1:], y_hats)
+        # else:
+        #     per = None
         
         if self.configs.md_weight > 0:
             scores = scores.view(-1).cpu()
             md_predict = md_outputs.max(-1)[1].view(-1).cpu()
+  
             acc = accuracy_score(scores, md_predict)
             f1_ = f1_score(scores, md_predict, pos_label=0)
             precision_ = precision_score(scores, md_predict, pos_label=0)
@@ -188,9 +181,10 @@ class Weakly_s(pl.LightningModule):
         else:
             scores = md_predict = acc = f1_ = precision_ = recall_ = None
             
-        if 'vivosdev08_271' in utt_ids:
+        if batch_idx == 0:
             print("\nResult of", utt_ids[0])
             if L1_list:
+                print("EP:", y_hats_encoder[0].shape, self.vocab.label_to_string(y_hats_encoder[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("PR:", y_hats[0].shape, self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("Ro:", r_os[0, 1:].shape, self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
                 print("Rc:", r_cs[0, 1:].shape, self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '))
@@ -200,11 +194,10 @@ class Weakly_s(pl.LightningModule):
                 print("MED output   :", md_predict)
                 print("Score        :", scores)
                 print("Accuracy:", acc)
-            
-            attn_encoder_decoder = attn_encoder_decoder.squeeze().detach().cpu()
+                
+            attn_encoder_decoder = torch.sum(attn_encoder_decoder, dim=0).detach().cpu()
             print("Decoder-Encoder Attention:", attn_encoder_decoder.shape)
-            plt.imshow(attn_encoder_decoder, interpolation='none', aspect=2)
-            plt.yticks([i for i in range(len(attn_encoder_decoder))], ["q", "u", "á", " ", "t", "ố", "t", " ", "r", "ồ", "i", " "])
+            plt.imshow(attn_encoder_decoder, interpolation='none')
             plt.savefig('Data/attention.png')
             
             if word_attn is not None:
@@ -218,18 +211,19 @@ class Weakly_s(pl.LightningModule):
 
     def test_step(self, batch: tuple, batch_idx: int) -> Tensor:
         inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, utt_ids, L1_list = batch
-        loss, pr_loss, md_loss, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
+        loss, pr_loss, md_loss, encoder_log_probs, pr_outputs, md_outputs, attn_encoder_decoder, word_attn = self.forward(
             inputs, r_os, input_lengths, r_os_lengths, r_cs, scores, L1_list
         )
         
         y_hats = pr_outputs.max(-1)[1]
-        if L1_list:
-            per = self.per_metric(r_os[:, 1:], y_hats)
-        else:
-            per = None
+        # if L1_list:
         
-        scores = scores.view(-1).cpu()
+        per = self.per_metric(r_os[:, 1:], y_hats)
+        # else:
+        #     per = None
+        
         md_predict = md_outputs.max(-1)[1].view(-1).cpu()
+        scores = scores.view(-1).cpu()
   
         acc = accuracy_score(scores, md_predict)
         f1_ = f1_score(scores, md_predict, pos_label=0)
@@ -247,8 +241,8 @@ class Weakly_s(pl.LightningModule):
             self.vocab.label_to_string(r_os[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
             self.vocab.label_to_string(r_cs[0, 1:]).replace('   ', '=').replace(' ', '').replace('=', ' '),
             self.vocab.label_to_string(y_hats[0]).replace('   ', '=').replace(' ', '').replace('=', ' ') if L1_list else None,
-            ' '.join([str(s) for s in scores.tolist()]),
-            ' '.join([str(s) for s in md_predict.tolist()]),
+            ' '.join([str(s) for s in scores.cpu().tolist()]),
+            ' '.join([str(s) for s in md_outputs.max(-1)[1].view(-1).cpu().tolist()]),
             per, acc, f1_, precision_, recall_
         ]
             
