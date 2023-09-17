@@ -5,7 +5,7 @@
 </div>
     
 ## Introduction
-Source code of [A Deep Learning-Based Strategy for Vietnamese Incorrect Pronunciation Detection paper]([10.1109/ICSSE58758.2023.10227159](http://dx.doi.org/10.1109/ICSSE58758.2023.10227159))
+Source code of [A Deep Learning-Based Strategy for Vietnamese Incorrect Pronunciation Detection paper](http://dx.doi.org/10.1109/ICSSE58758.2023.10227159)
 ---
 ## Installation
 This project recommends Python 3.7 or higher.  
